@@ -33,7 +33,7 @@ app.use('/uploads', express.static(uploadsDir));
 // --- REST API ---
 
 app.post('/api/register', (req, res) => {
-  const { username, password, fullName, phone, profilePic } = req.body;
+  const { username, password, fullName, phone, profilePic, invitedBy } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'Nom et mot de passe requis' });
   }
@@ -61,6 +61,14 @@ app.post('/api/register', (req, res) => {
   const hash = bcrypt.hashSync(password, 10);
   const result = db.createUser(username, hash, fullName || username, phone || '', picPath);
   const user = { id: result.lastInsertRowid, username, full_name: fullName || username, phone: phone || '', profile_pic: picPath };
+  // Auto-add inviter as contact
+  if (invitedBy) {
+    const inviterId = Number(invitedBy);
+    if (inviterId && inviterId !== user.id) {
+      db.addContact(user.id, inviterId, '');
+      db.addContact(inviterId, user.id, '');
+    }
+  }
   const token = generateToken({ id: user.id, username });
   res.json({ user, token });
 });

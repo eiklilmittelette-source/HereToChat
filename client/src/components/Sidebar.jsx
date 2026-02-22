@@ -367,10 +367,10 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
                 </button>
                 <button className="add-menu-item" onClick={() => {
                   setShowAddMenu(false);
-                  const appUrl = window.location.origin;
-                  const text = `Rejoins-moi sur HereToChat ! ${appUrl}`;
+                  const inviteUrl = `${window.location.origin}?invite=${currentUser.id}`;
+                  const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`;
                   if (navigator.share) {
-                    navigator.share({ title: 'HereToChat', text, url: appUrl }).catch(() => {});
+                    navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {});
                   } else {
                     navigator.clipboard.writeText(text).then(() => alert('Lien copié !')).catch(() => {});
                   }

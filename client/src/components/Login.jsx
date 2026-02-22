@@ -9,6 +9,7 @@ export default function Login({ onLogin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [profilePic, setProfilePic] = useState('');
+  const hasInvite = new URLSearchParams(window.location.search).has('invite');
 
   function handlePicChange(e) {
     const file = e.target.files[0];
@@ -22,6 +23,7 @@ export default function Login({ onLogin }) {
     e.preventDefault();
     setError('');
     setLoading(true);
+    const invitedBy = new URLSearchParams(window.location.search).get('invite');
     try {
       if (isRegister) {
         if (!fullName.trim()) { setError('Nom requis'); setLoading(false); return; }
@@ -29,7 +31,7 @@ export default function Login({ onLogin }) {
         const res = await fetch(apiUrl('/api/register'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: phone.trim(), password, fullName: fullName.trim(), phone: phone.trim(), profilePic: profilePic || undefined })
+          body: JSON.stringify({ username: phone.trim(), password, fullName: fullName.trim(), phone: phone.trim(), profilePic: profilePic || undefined, invitedBy: invitedBy || undefined })
         });
         const data = await res.json();
         if (!res.ok) { setError(data.error); return; }
@@ -59,6 +61,7 @@ export default function Login({ onLogin }) {
           <div className="login-icon">💬</div>
           <h1>HereToChat</h1>
           <p>{isRegister ? 'Créer un compte' : 'Se connecter'}</p>
+          {hasInvite && <p style={{ color: '#2ecc71', fontSize: 13, marginTop: 6 }}>Un ami t'a invité ! Inscris-toi pour le retrouver</p>}
         </div>
         <form onSubmit={handleSubmit}>
           {isRegister && (
