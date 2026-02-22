@@ -236,7 +236,7 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
         <h2>Paramètres</h2>
       </div>
       <div className="settings-content">
-        <label className="settings-avatar-section" style={{ cursor: 'pointer' }}>
+        <div className="settings-avatar-section">
           {avatarSrc ? (
             <img src={avatarSrc} alt="avatar" className="settings-avatar-img" />
           ) : (
@@ -244,14 +244,16 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
               <span>{(name || '?')[0].toUpperCase()}</span>
             </div>
           )}
-          <div className="settings-avatar-overlay">Changer la photo</div>
           <input
+            id="profile-pic-input"
             type="file"
             accept="image/*"
+            capture="environment"
             onChange={handlePicSelect}
-            style={{ display: 'none' }}
+            style={{ position: 'absolute', opacity: 0, width: '100%', height: '100%', top: 0, left: 0, cursor: 'pointer', zIndex: 10 }}
           />
-        </label>
+          <div className="settings-avatar-overlay">Changer la photo</div>
+        </div>
         <form className="settings-form" onSubmit={handleSave}>
           <div className="settings-field">
             <label>Nom</label>
@@ -436,31 +438,13 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
             <button className="add-contact-btn" onClick={() => setShowAddMenu(!showAddMenu)} title="Ajouter">＋</button>
             {showAddMenu && (
               <div className="add-menu">
-                <button className="add-menu-item" onClick={() => { setShowAddMenu(false); setShowAddModal(true); }}>
+                <button className="add-menu-item" onTouchEnd={(e) => { e.preventDefault(); setShowAddMenu(false); setShowAddModal(true); }} onClick={() => { setShowAddMenu(false); setShowAddModal(true); }}>
                   <span>👤</span> Ajouter un contact
                 </button>
-                <button className="add-menu-item" onClick={() => { setShowAddMenu(false); setShowCreateGroup(true); }}>
+                <button className="add-menu-item" onTouchEnd={(e) => { e.preventDefault(); setShowAddMenu(false); setShowCreateGroup(true); }} onClick={() => { setShowAddMenu(false); setShowCreateGroup(true); }}>
                   <span>👥</span> Nouveau groupe
                 </button>
-                {'contacts' in navigator && (
-                  <button className="add-menu-item" onClick={async () => {
-                    setShowAddMenu(false);
-                    try {
-                      const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
-                      let added = 0;
-                      for (const c of contacts) {
-                        if (c.tel && c.tel[0]) {
-                          const result = await onAddContact(c.tel[0], c.name?.[0] || '');
-                          if (!result.error) added++;
-                        }
-                      }
-                      if (added > 0) alert(`${added} contact${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''} !`);
-                    } catch {}
-                  }}>
-                    <span>📱</span> Importer tous les contacts
-                  </button>
-                )}
-                <button className="add-menu-item" onClick={() => {
+                <button className="add-menu-item" onTouchEnd={(e) => { e.preventDefault(); setShowAddMenu(false); const inviteUrl = `${window.location.origin}?invite=${currentUser.id}`; const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`; if (navigator.share) { navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {}); } else { navigator.clipboard.writeText(text).then(() => alert('Lien copié !')).catch(() => {}); } }} onClick={() => {
                   setShowAddMenu(false);
                   const inviteUrl = `${window.location.origin}?invite=${currentUser.id}`;
                   const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`;
