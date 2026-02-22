@@ -20,12 +20,13 @@ function UserAvatar({ user, size, onClick, editable }) {
   );
 }
 
-function AddContactModal({ onClose, onAdd }) {
+function AddContactModal({ onClose, onAdd, currentUser }) {
   const [phone, setPhone] = useState('');
   const [nickname, setNickname] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [importStatus, setImportStatus] = useState('');
+  const [notOnApp, setNotOnApp] = useState([]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -57,14 +58,23 @@ function AddContactModal({ onClose, onAdd }) {
       setLoading(true);
       setImportStatus(`Import de ${contacts.length} contacts...`);
       let added = 0;
+      const missing = [];
       for (const c of contacts) {
         if (c.tel && c.tel[0]) {
           const result = await onAdd(c.tel[0], c.name?.[0] || '');
-          if (!result.error) added++;
+          if (!result.error) {
+            added++;
+          } else if (result.error === 'Aucun utilisateur avec ce numéro') {
+            missing.push({ name: c.name?.[0] || c.tel[0], tel: c.tel[0] });
+          }
         }
       }
-      setImportStatus(`${added} contact${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''} !`);
-      setTimeout(() => onClose(), 1500);
+      setImportStatus(`${added} contact${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''}`);
+      if (missing.length > 0) {
+        setNotOnApp(missing);
+      } else {
+        setTimeout(() => onClose(), 1500);
+      }
     } catch {
       setError('Import annulé');
     } finally {
@@ -72,42 +82,101 @@ function AddContactModal({ onClose, onAdd }) {
     }
   }
 
+  function inviteContact(contact) {
+    const inviteUrl = `${window.location.origin}?invite=${currentUser?.id || ''}`;
+    const text = `Salut ${contact.name} ! Rejoins-moi sur HereToChat : ${inviteUrl}`;
+    if (navigator.share) {
+      navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {});
+    } else {
+      window.open(`sms:${contact.tel}?body=${encodeURIComponent(text)}`, '_blank');
+    }
+  }
+
+  function inviteAll() {
+    const inviteUrl = `${window.location.origin}?invite=${currentUser?.id || ''}`;
+    const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`;
+    if (navigator.share) {
+      navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(text).then(() => alert('Lien copié !')).catch(() => {});
+    }
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header">
           <h3>Ajouter un contact</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <form onSubmit={handleSubmit}>
-          <input
-            type="tel"
-            placeholder="Numéro de téléphone"
-            value={phone}
-            onChange={e => setPhone(e.target.value)}
-            required
-            autoFocus
-          />
-          <input
-            type="text"
-            placeholder="Nom du contact"
-            value={nickname}
-            onChange={e => setNickname(e.target.value)}
-          />
-          {error && <div className="error">{error}</div>}
-          {importStatus && <div className="success-msg">{importStatus}</div>}
-          <button type="submit" disabled={loading}>
-            {loading ? '...' : 'Ajouter'}
-          </button>
-        </form>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={handleImportContacts}
-          style={{ width: '100%', marginTop: 8, padding: '12px', background: 'linear-gradient(135deg, #2ecc71, #27ae60)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
-        >
-          📱 Importer tous les contacts
-        </button>
+        {notOnApp.length > 0 ? (
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {importStatus && <div className="success-msg">{importStatus}</div>}
+            <div style={{ fontSize: 14, color: '#f39c12', fontWeight: 600 }}>
+              {notOnApp.length} contact{notOnApp.length > 1 ? 's' : ''} pas encore sur l'app :
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 250 }}>
+              {notOnApp.map((c, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 12 }}>
+                  <span style={{ flex: 1, fontSize: 14, color: '#f0f0f0' }}>{c.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => inviteContact(c)}
+                    style={{ padding: '6px 12px', background: 'linear-gradient(135deg, #3498db, #2980b9)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    Inviter
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={inviteAll}
+              style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg, #9b59b6, #8e44ad)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+            >
+              📩 Inviter tout le monde
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, cursor: 'pointer' }}
+            >
+              Fermer
+            </button>
+          </div>
+        ) : (
+          <>
+            <form onSubmit={handleSubmit}>
+              <input
+                type="tel"
+                placeholder="Numéro de téléphone"
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                required
+                autoFocus
+              />
+              <input
+                type="text"
+                placeholder="Nom du contact"
+                value={nickname}
+                onChange={e => setNickname(e.target.value)}
+              />
+              {error && <div className="error">{error}</div>}
+              {importStatus && <div className="success-msg">{importStatus}</div>}
+              <button type="submit" disabled={loading}>
+                {loading ? '...' : 'Ajouter'}
+              </button>
+            </form>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={handleImportContacts}
+              style={{ width: '100%', marginTop: 8, padding: '12px', background: 'linear-gradient(135deg, #2ecc71, #27ae60)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+            >
+              📱 Importer tous les contacts
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -462,6 +531,7 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
         <AddContactModal
           onClose={() => setShowAddModal(false)}
           onAdd={onAddContact}
+          currentUser={currentUser}
         />
       )}
       {showCreateGroup && (
