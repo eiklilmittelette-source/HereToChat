@@ -8,7 +8,7 @@ services:
   - type: web
     name: heretochat
     runtime: node
-    buildCommand: cd server && npm install
+    buildCommand: cd client && npm install && npx vite build && cd ../server && npm install
     startCommand: cd server && npm start
     envVars:
       - key: NODE_ENV
