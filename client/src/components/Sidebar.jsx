@@ -434,31 +434,17 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
           <span className="sidebar-username">{currentUser.full_name || currentUser.username}</span>
         </div>
         <div className="sidebar-actions">
-          <div style={{ position: 'relative' }}>
-            <button className="add-contact-btn" onClick={() => setShowAddMenu(!showAddMenu)} title="Ajouter">＋</button>
-            {showAddMenu && (
-              <div className="add-menu">
-                <button className="add-menu-item" onTouchEnd={(e) => { e.preventDefault(); setShowAddMenu(false); setShowAddModal(true); }} onClick={() => { setShowAddMenu(false); setShowAddModal(true); }}>
-                  <span>👤</span> Ajouter un contact
-                </button>
-                <button className="add-menu-item" onTouchEnd={(e) => { e.preventDefault(); setShowAddMenu(false); setShowCreateGroup(true); }} onClick={() => { setShowAddMenu(false); setShowCreateGroup(true); }}>
-                  <span>👥</span> Nouveau groupe
-                </button>
-                <button className="add-menu-item" onTouchEnd={(e) => { e.preventDefault(); setShowAddMenu(false); const inviteUrl = `${window.location.origin}?invite=${currentUser.id}`; const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`; if (navigator.share) { navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {}); } else { navigator.clipboard.writeText(text).then(() => alert('Lien copié !')).catch(() => {}); } }} onClick={() => {
-                  setShowAddMenu(false);
-                  const inviteUrl = `${window.location.origin}?invite=${currentUser.id}`;
-                  const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`;
-                  if (navigator.share) {
-                    navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {});
-                  } else {
-                    navigator.clipboard.writeText(text).then(() => alert('Lien copié !')).catch(() => {});
-                  }
-                }}>
-                  <span>📩</span> Inviter des amis
-                </button>
-              </div>
-            )}
-          </div>
+          <button className="add-contact-btn" onClick={() => setShowAddModal(true)} title="Ajouter un contact">＋</button>
+          <button className="add-contact-btn" onClick={() => setShowCreateGroup(true)} title="Nouveau groupe" style={{ fontSize: 18 }}>👥</button>
+          <button className="add-contact-btn" onClick={() => {
+            const inviteUrl = `${window.location.origin}?invite=${currentUser.id}`;
+            const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`;
+            if (navigator.share) {
+              navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {});
+            } else {
+              navigator.clipboard.writeText(text).then(() => alert('Lien copié !')).catch(() => {});
+            }
+          }} title="Inviter des amis" style={{ fontSize: 18 }}>📩</button>
           <button className="settings-btn" onClick={() => setShowSettings(true)} title="Paramètres">⚙</button>
         </div>
       </div>
