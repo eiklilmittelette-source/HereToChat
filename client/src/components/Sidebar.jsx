@@ -329,6 +329,33 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
                 <button className="add-menu-item" onClick={() => { setShowAddMenu(false); setShowCreateGroup(true); }}>
                   <span>👥</span> Nouveau groupe
                 </button>
+                {'contacts' in navigator && (
+                  <button className="add-menu-item" onClick={async () => {
+                    setShowAddMenu(false);
+                    try {
+                      const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+                      for (const c of contacts) {
+                        if (c.tel && c.tel[0]) {
+                          await onAddContact(c.tel[0], c.name?.[0] || '');
+                        }
+                      }
+                    } catch {}
+                  }}>
+                    <span>📱</span> Importer contacts
+                  </button>
+                )}
+                <button className="add-menu-item" onClick={() => {
+                  setShowAddMenu(false);
+                  const appUrl = window.location.origin;
+                  const text = `Rejoins-moi sur HereToChat ! ${appUrl}`;
+                  if (navigator.share) {
+                    navigator.share({ title: 'HereToChat', text, url: appUrl }).catch(() => {});
+                  } else {
+                    navigator.clipboard.writeText(text).then(() => alert('Lien copié !')).catch(() => {});
+                  }
+                }}>
+                  <span>📩</span> Inviter des amis
+                </button>
               </div>
             )}
           </div>
