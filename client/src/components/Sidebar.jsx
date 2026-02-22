@@ -227,7 +227,7 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
         <h2>Paramètres</h2>
       </div>
       <div className="settings-content">
-        <div className="settings-avatar-section" onClick={() => picRef.current?.click()}>
+        <label className="settings-avatar-section" style={{ cursor: 'pointer' }}>
           {avatarSrc ? (
             <img src={avatarSrc} alt="avatar" className="settings-avatar-img" />
           ) : (
@@ -237,13 +237,12 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
           )}
           <div className="settings-avatar-overlay">Changer la photo</div>
           <input
-            ref={picRef}
             type="file"
             accept="image/*"
             onChange={handlePicSelect}
             style={{ display: 'none' }}
           />
-        </div>
+        </label>
         <form className="settings-form" onSubmit={handleSave}>
           <div className="settings-field">
             <label>Nom</label>
