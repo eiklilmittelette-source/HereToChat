@@ -69,8 +69,9 @@ app.post('/api/register', (req, res) => {
   }
 
   const hash = bcrypt.hashSync(password, 10);
-  const result = db.createUser(username, hash, fullName || username, phone || '', picPath);
-  const user = { id: result.lastInsertRowid, username, full_name: fullName || username, phone: phone || '', profile_pic: picPath };
+  const normalizedPhone = phone ? normalizePhone(phone.trim()) : '';
+  const result = db.createUser(username, hash, fullName || username, normalizedPhone, picPath);
+  const user = { id: result.lastInsertRowid, username, full_name: fullName || username, phone: normalizedPhone, profile_pic: picPath };
   // Auto-add inviter as contact
   if (invitedBy) {
     const inviterId = Number(invitedBy);
