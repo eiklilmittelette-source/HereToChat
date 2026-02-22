@@ -101,16 +101,18 @@ const MSG_COLOR_OPTIONS = [
   { id: 'dark', label: 'Sombre', color: 'linear-gradient(135deg, #2d3436, #636e72)' },
 ];
 
-const RECEIVED_TEXT_COLORS = [
-  { id: 'default', label: 'Défaut', color: '#1c1c2e' },
-  { id: 'white', label: 'Blanc', color: '#ffffff' },
-  { id: 'blue', label: 'Bleu', color: '#2980b9' },
-  { id: 'red', label: 'Rouge', color: '#e74c3c' },
-  { id: 'green', label: 'Vert', color: '#27ae60' },
-  { id: 'purple', label: 'Violet', color: '#8e44ad' },
-  { id: 'orange', label: 'Orange', color: '#e67e22' },
-  { id: 'pink', label: 'Rose', color: '#e84393' },
-  { id: 'cyan', label: 'Cyan', color: '#00cec9' },
+
+const RECEIVED_BUBBLE_COLORS = [
+  { id: 'default', label: 'Défaut', color: 'rgba(255,255,255,0.85)' },
+  { id: 'blue', label: 'Bleu', color: 'linear-gradient(135deg, #3498db, #2980b9)' },
+  { id: 'green', label: 'Vert', color: 'linear-gradient(135deg, #2ecc71, #27ae60)' },
+  { id: 'red', label: 'Rouge', color: 'linear-gradient(135deg, #e74c3c, #c0392b)' },
+  { id: 'orange', label: 'Orange', color: 'linear-gradient(135deg, #f39c12, #e67e22)' },
+  { id: 'purple', label: 'Violet', color: 'linear-gradient(135deg, #9b59b6, #8e44ad)' },
+  { id: 'pink', label: 'Rose', color: 'linear-gradient(135deg, #fd79a8, #e84393)' },
+  { id: 'cyan', label: 'Cyan', color: 'linear-gradient(135deg, #00cec9, #0984e3)' },
+  { id: 'gold', label: 'Or', color: 'linear-gradient(135deg, #f1c40f, #f39c12)' },
+  { id: 'dark', label: 'Sombre', color: 'linear-gradient(135deg, #2d3436, #636e72)' },
 ];
 
 function MessageContextMenu({ x, y, msg, isSent, isGroup, onClose, onDelete, onCopy, onReply, onReact }) {
@@ -378,8 +380,8 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
   const [msgColors, setMsgColors] = useState(() => {
     try { return JSON.parse(localStorage.getItem('msgColors') || '{}'); } catch { return {}; }
   });
-  const [recvTextColors, setRecvTextColors] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('recvTextColors') || '{}'); } catch { return {}; }
+  const [recvBubbleColors, setRecvBubbleColors] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('recvBubbleColors') || '{}'); } catch { return {}; }
   });
 
   const [contextMenu, setContextMenu] = useState(null);
@@ -420,11 +422,11 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
     localStorage.setItem('msgColors', JSON.stringify(updated));
   }
 
-  function setRecvTextColor(colorId) {
+  function setRecvBubbleColor(colorId) {
     if (!chatKey) return;
-    const updated = { ...recvTextColors, [chatKey]: colorId };
-    setRecvTextColors(updated);
-    localStorage.setItem('recvTextColors', JSON.stringify(updated));
+    const updated = { ...recvBubbleColors, [chatKey]: colorId };
+    setRecvBubbleColors(updated);
+    localStorage.setItem('recvBubbleColors', JSON.stringify(updated));
   }
 
   function handleCustomBg(e) {
@@ -506,8 +508,8 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
   const fixedColor = currentMsgColorId !== 'rainbow'
     ? MSG_COLOR_OPTIONS.find(c => c.id === currentMsgColorId)?.color : null;
 
-  const currentRecvTextColorId = recvTextColors[chatKey] || 'default';
-  const recvTextColor = RECEIVED_TEXT_COLORS.find(c => c.id === currentRecvTextColorId)?.color || '#1c1c2e';
+  const currentRecvBubbleColorId = recvBubbleColors[chatKey] || 'default';
+  const recvBubbleColor = RECEIVED_BUBBLE_COLORS.find(c => c.id === currentRecvBubbleColorId)?.color || 'rgba(255,255,255,0.85)';
 
   const headerName = isGroup ? selectedGroup.name : (selectedUser.nickname || selectedUser.full_name || selectedUser.username);
   const headerStatus = isGroup ? 'Groupe' : typing ? 'écrit...' : isOnline ? 'en ligne' : 'hors ligne';
@@ -580,12 +582,12 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
               </button>
             );
           })}
-          <div className="color-separator">Couleur texte reçu</div>
-          {RECEIVED_TEXT_COLORS.map(opt => {
-            const currentRecvId = recvTextColors[chatKey] || 'default';
+          <div className="color-separator">Couleur bulle reçue</div>
+          {RECEIVED_BUBBLE_COLORS.map(opt => {
+            const currentBubbleId = recvBubbleColors[chatKey] || 'default';
             return (
-              <button key={'rt-' + opt.id} className={`bg-option recv-text-option ${currentRecvId === opt.id ? 'active' : ''}`} onClick={() => setRecvTextColor(opt.id)} style={{ background: opt.color, border: opt.id === 'white' ? '1px solid rgba(255,255,255,0.3)' : undefined }}>
-                <span style={{ color: opt.id === 'white' || opt.id === 'default' ? '#fff' : '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>{opt.label}</span>
+              <button key={'rb-' + opt.id} className={`bg-option msg-color-option ${currentBubbleId === opt.id ? 'active' : ''}`} onClick={() => setRecvBubbleColor(opt.id)} style={{ background: opt.color }}>
+                <span>{opt.label}</span>
               </button>
             );
           })}
@@ -597,7 +599,8 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
             const isSent = msg.sender_id === currentUser.id;
             const bubbleColor = fixedColor || rainbowColors[idx % rainbowColors.length];
             const bubbleStyle = isSent && !msg.deleted ? { background: bubbleColor } : {};
-            const recvStyle = !isSent && !msg.deleted ? { color: recvTextColor } : {};
+            const recvStyle = {};
+            const recvBubbleStyle = !isSent && !msg.deleted ? { background: recvBubbleColor } : {};
             const msgType = msg.type || 'text';
             const repliedMsg = msg.reply_to ? msgById[msg.reply_to] : null;
             const reactions = msg.reactions || [];
@@ -631,7 +634,7 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
                     <UserAvatar user={senderUser || { username: msg.sender_name || '?', full_name: msg.sender_full_name || msg.sender_name || '?' }} size={30} />
                   </div>
                 )}
-                <div className="message-bubble" style={bubbleStyle}>
+                <div className="message-bubble" style={{ ...bubbleStyle, ...recvBubbleStyle }}>
                   {isGroup && !isSent && (
                     <div className="group-sender-name">{msg.sender_full_name || msg.sender_name}</div>
                   )}
@@ -648,7 +651,7 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
                   {msgType === 'video' && <VideoMessage url={msg.file_url} onFullscreen={(u) => setLightboxVideo(u)} />}
                   {msgType === 'file' && <FileMessage url={msg.file_url} name={msg.file_name} />}
                   {msgType === 'text' && <span className="message-text" style={recvStyle}>{msg.content}</span>}
-                  <span className="message-time" style={!isSent && recvTextColor !== '#1c1c2e' ? { color: recvTextColor, opacity: 0.7 } : {}}>
+                  <span className="message-time">
                     {(() => { try { const ts = msg.timestamp; return new Date(ts && !ts.endsWith('Z') ? ts + 'Z' : ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } })()}
                   </span>
                 </div>
