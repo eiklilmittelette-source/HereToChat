@@ -137,13 +137,13 @@ app.post('/api/contacts/add', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'Numéro de téléphone requis' });
   }
   const normalized = normalizePhone(phone.trim());
-  // Try exact match first, then normalized match
+  // Try exact match by phone, then normalized, then username, then full search
   let contact = await db.getUserByPhone(phone.trim());
   if (!contact) contact = await db.getUserByPhone(normalized);
-  // Also search all users for normalized match
+  if (!contact) contact = await db.getUserByUsername(phone.trim());
   if (!contact) {
     const all = await db.getAllUsers(0);
-    contact = all.find(u => normalizePhone(u.phone || '') === normalized);
+    contact = all.find(u => normalizePhone(u.phone || '') === normalized || normalizePhone(u.username || '') === normalized);
   }
   if (!contact) {
     return res.status(404).json({ error: 'Aucun utilisateur avec ce numéro' });
