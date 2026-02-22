@@ -25,6 +25,7 @@ function AddContactModal({ onClose, onAdd }) {
   const [nickname, setNickname] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [importStatus, setImportStatus] = useState('');
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -40,6 +41,32 @@ function AddContactModal({ onClose, onAdd }) {
       }
     } catch {
       setError('Erreur de connexion');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleImportContacts() {
+    if (!('contacts' in navigator)) {
+      setError('L\'import de contacts n\'est disponible que sur téléphone (Android/Chrome)');
+      return;
+    }
+    try {
+      const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+      if (!contacts || contacts.length === 0) return;
+      setLoading(true);
+      setImportStatus(`Import de ${contacts.length} contacts...`);
+      let added = 0;
+      for (const c of contacts) {
+        if (c.tel && c.tel[0]) {
+          const result = await onAdd(c.tel[0], c.name?.[0] || '');
+          if (!result.error) added++;
+        }
+      }
+      setImportStatus(`${added} contact${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''} !`);
+      setTimeout(() => onClose(), 1500);
+    } catch {
+      setError('Import annulé');
     } finally {
       setLoading(false);
     }
@@ -68,10 +95,19 @@ function AddContactModal({ onClose, onAdd }) {
             onChange={e => setNickname(e.target.value)}
           />
           {error && <div className="error">{error}</div>}
+          {importStatus && <div className="success-msg">{importStatus}</div>}
           <button type="submit" disabled={loading}>
             {loading ? '...' : 'Ajouter'}
           </button>
         </form>
+        <button
+          type="button"
+          disabled={loading}
+          onClick={handleImportContacts}
+          style={{ width: '100%', marginTop: 8, padding: '12px', background: 'linear-gradient(135deg, #2ecc71, #27ae60)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+        >
+          📱 Importer tous les contacts
+        </button>
       </div>
     </div>
   );
@@ -329,21 +365,6 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
                 <button className="add-menu-item" onClick={() => { setShowAddMenu(false); setShowCreateGroup(true); }}>
                   <span>👥</span> Nouveau groupe
                 </button>
-                {'contacts' in navigator && (
-                  <button className="add-menu-item" onClick={async () => {
-                    setShowAddMenu(false);
-                    try {
-                      const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
-                      for (const c of contacts) {
-                        if (c.tel && c.tel[0]) {
-                          await onAddContact(c.tel[0], c.name?.[0] || '');
-                        }
-                      }
-                    } catch {}
-                  }}>
-                    <span>📱</span> Importer contacts
-                  </button>
-                )}
                 <button className="add-menu-item" onClick={() => {
                   setShowAddMenu(false);
                   const appUrl = window.location.origin;
