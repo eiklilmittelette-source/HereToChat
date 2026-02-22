@@ -7,13 +7,13 @@ function picUrl(path) {
   return apiUrl(path);
 }
 
-function UserAvatar({ user, size }) {
+function UserAvatar({ user, size, onClick }) {
   const s = size || 42;
   if (user.profile_pic) {
-    return <img src={picUrl(user.profile_pic)} alt={user.username} className="avatar" style={{ width: s, height: s, objectFit: 'cover' }} />;
+    return <img src={picUrl(user.profile_pic)} alt={user.username} className="avatar" style={{ width: s, height: s, objectFit: 'cover', cursor: onClick ? 'pointer' : 'default' }} onClick={onClick} />;
   }
   return (
-    <div className="avatar" style={{ width: s, height: s, fontSize: s * 0.43 }}>
+    <div className="avatar" style={{ width: s, height: s, fontSize: s * 0.43, cursor: onClick ? 'pointer' : 'default' }} onClick={onClick}>
       {(user.full_name || user.username || '?')[0].toUpperCase()}
     </div>
   );
@@ -60,13 +60,16 @@ function FileMessage({ url, name }) {
   );
 }
 
-function ImageMessage({ url }) {
+function VideoMessage({ url, onFullscreen }) {
   return (
-    <a href={picUrl(url)} target="_blank" rel="noopener noreferrer">
-      <img src={picUrl(url)} alt="image" className="image-message" />
-    </a>
+    <div className="video-message" onClick={() => onFullscreen(picUrl(url))}>
+      <video src={picUrl(url)} className="video-thumb" preload="metadata" />
+      <div className="video-play-overlay">▶</div>
+    </div>
   );
 }
+
+const QUICK_REACTIONS = ['❤️', '😂', '👍', '😮', '😢', '🔥'];
 
 const BG_OPTIONS = [
   { id: 'default', label: 'Par défaut', value: '' },
@@ -98,7 +101,19 @@ const MSG_COLOR_OPTIONS = [
   { id: 'dark', label: 'Sombre', color: 'linear-gradient(135deg, #2d3436, #636e72)' },
 ];
 
-function MessageContextMenu({ x, y, msg, isSent, isGroup, onClose, onDelete, onCopy, onReply }) {
+const RECEIVED_TEXT_COLORS = [
+  { id: 'default', label: 'Défaut', color: '#1c1c2e' },
+  { id: 'white', label: 'Blanc', color: '#ffffff' },
+  { id: 'blue', label: 'Bleu', color: '#2980b9' },
+  { id: 'red', label: 'Rouge', color: '#e74c3c' },
+  { id: 'green', label: 'Vert', color: '#27ae60' },
+  { id: 'purple', label: 'Violet', color: '#8e44ad' },
+  { id: 'orange', label: 'Orange', color: '#e67e22' },
+  { id: 'pink', label: 'Rose', color: '#e84393' },
+  { id: 'cyan', label: 'Cyan', color: '#00cec9' },
+];
+
+function MessageContextMenu({ x, y, msg, isSent, isGroup, onClose, onDelete, onCopy, onReply, onReact }) {
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -113,11 +128,15 @@ function MessageContextMenu({ x, y, msg, isSent, isGroup, onClose, onDelete, onC
     };
   }, [onClose]);
 
-  // Adjust position to stay in viewport
   const style = { position: 'fixed', top: y, left: x, zIndex: 300 };
 
   return (
     <div className="msg-context-menu" style={style} ref={menuRef}>
+      <div className="ctx-quick-reactions">
+        {QUICK_REACTIONS.map(emoji => (
+          <button key={emoji} onClick={() => { onReact(msg.id, emoji, isGroup); onClose(); }}>{emoji}</button>
+        ))}
+      </div>
       <button onClick={() => { onReply(msg); onClose(); }}>
         <span>↩</span> Répondre
       </button>
@@ -137,7 +156,216 @@ function MessageContextMenu({ x, y, msg, isSent, isGroup, onClose, onDelete, onC
   );
 }
 
-export default function ChatWindow({ messages, currentUser, selectedUser, selectedGroup, onlineUsers, typing, onBack, onDeleteMessage, onReply }) {
+function GroupInfoPanel({ group, currentUser, token, onClose, onLeaveGroup, onDeleteGroup, onGroupUpdated, contacts }) {
+  const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [groupPic, setGroupPic] = useState(group.pic || '');
+  const picInputRef = useRef(null);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [addedContacts, setAddedContacts] = useState([]); // IDs of members added to contacts this session
+
+  useEffect(() => {
+    fetch(apiUrl(`/api/groups/${group.id}`), { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { setMembers(data.members || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [group.id, token]);
+
+  const currentMember = members.find(m => m.id === currentUser.id);
+  const isAdmin = currentMember?.role === 'admin';
+
+  async function handleSetAdmin(userId) {
+    await fetch(apiUrl(`/api/groups/${group.id}/set-admin`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId })
+    });
+    setMembers(prev => prev.map(m => m.id === userId ? { ...m, role: 'admin' } : m));
+  }
+
+  async function handleRemoveAdmin(userId) {
+    await fetch(apiUrl(`/api/groups/${group.id}/remove-admin`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId })
+    });
+    setMembers(prev => prev.map(m => m.id === userId ? { ...m, role: 'member' } : m));
+  }
+
+  async function handleChangePic(e) {
+    const file = e.target.files[0];
+    if (!file || file.size > 2 * 1024 * 1024) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const res = await fetch(apiUrl(`/api/groups/${group.id}/update-pic`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ pic: reader.result })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setGroupPic(data.pic);
+          if (onGroupUpdated) onGroupUpdated({ ...group, pic: data.pic });
+        }
+      } catch {}
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
+
+  async function handleRemoveMember(userId) {
+    await fetch(apiUrl(`/api/groups/${group.id}/remove-member`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId })
+    });
+    setMembers(prev => prev.filter(m => m.id !== userId));
+  }
+
+  async function handleAddMember(userId) {
+    const res = await fetch(apiUrl(`/api/groups/${group.id}/add-member`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId })
+    });
+    if (res.ok) {
+      // Re-fetch members
+      const r = await fetch(apiUrl(`/api/groups/${group.id}`), { headers: { Authorization: `Bearer ${token}` } });
+      const data = await r.json();
+      setMembers(data.members || []);
+      setShowAddMember(false);
+    }
+  }
+
+  async function handleAddToContacts(member) {
+    const res = await fetch(apiUrl('/api/contacts/add'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ phone: member.phone, nickname: '' })
+    });
+    if (res.ok) {
+      setAddedContacts(prev => [...prev, member.id]);
+    }
+  }
+
+  // Contacts not already in the group
+  const availableContacts = (contacts || []).filter(c => !members.some(m => m.id === c.id));
+  // Contact IDs for checking if a member is already a contact
+  const contactIds = (contacts || []).map(c => c.id);
+
+  return (
+    <div className="group-info-overlay" onClick={onClose}>
+      <div className="group-info-panel" onClick={e => e.stopPropagation()}>
+        <div className="group-info-header">
+          <button className="group-info-close" onClick={onClose}>✕</button>
+          <h3>Info du groupe</h3>
+        </div>
+        <div className="group-info-name">
+          <input ref={picInputRef} type="file" accept="image/*" onChange={handleChangePic} style={{ display: 'none' }} />
+          <div className="group-pic-wrapper" onClick={() => isAdmin && picInputRef.current?.click()} style={{ cursor: isAdmin ? 'pointer' : 'default', position: 'relative' }}>
+            {groupPic ? (
+              <img src={picUrl(groupPic)} alt={group.name} className="avatar group-avatar" style={{ width: 80, height: 80, objectFit: 'cover' }} />
+            ) : (
+              <div className="avatar group-avatar" style={{ width: 80, height: 80, fontSize: 32 }}>
+                {group.name[0].toUpperCase()}
+              </div>
+            )}
+            {isAdmin && <div className="group-pic-edit-overlay">📷</div>}
+          </div>
+          <h2>{group.name}</h2>
+          <span>{members.length} participants</span>
+        </div>
+        <div className="group-info-members">
+          <h4>Participants</h4>
+          {loading ? <p style={{color:'#6a6a85',padding:'12px'}}>Chargement...</p> : members.map(m => (
+            <div key={m.id} className="group-member-item">
+              <UserAvatar user={m} size={40} />
+              <div className="group-member-info">
+                <span className="group-member-name">
+                  {m.full_name || m.username}
+                  {m.id === currentUser.id && ' (Toi)'}
+                </span>
+                <span className="group-member-phone">{m.phone || 'Pas de numéro'}</span>
+              </div>
+              {m.role === 'admin' && <span className="admin-badge">Admin</span>}
+              {m.id !== currentUser.id && !contactIds.includes(m.id) && !addedContacts.includes(m.id) && m.phone && (
+                <button className="add-contact-from-group" onClick={() => handleAddToContacts(m)} title="Ajouter aux contacts">＋</button>
+              )}
+              {addedContacts.includes(m.id) && <span className="added-badge">Ajouté</span>}
+              {isAdmin && m.id !== currentUser.id && (
+                <div className="group-member-actions">
+                  {m.role !== 'admin' && <button onClick={() => handleSetAdmin(m.id)} title="Rendre admin">👑</button>}
+                  {m.role === 'admin' && <button onClick={() => handleRemoveAdmin(m.id)} title="Retirer admin" className="remove-admin-btn">👑❌</button>}
+                  <button onClick={() => handleRemoveMember(m.id)} title="Retirer du groupe" className="remove-member-btn">✕</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        {showAddMember && (
+          <div className="add-member-section">
+            <h4>Ajouter un membre</h4>
+            {availableContacts.length === 0 ? (
+              <p style={{ color: '#6a6a85', fontSize: 13, padding: '8px 0' }}>Tous tes contacts sont déjà dans le groupe</p>
+            ) : (
+              availableContacts.map(c => (
+                <div key={c.id} className="group-member-item" onClick={() => handleAddMember(c.id)} style={{ cursor: 'pointer' }}>
+                  <UserAvatar user={c} size={36} />
+                  <div className="group-member-info">
+                    <span className="group-member-name">{c.nickname || c.full_name || c.username}</span>
+                    <span className="group-member-phone">{c.phone || ''}</span>
+                  </div>
+                  <span style={{ color: '#2ecc71', fontWeight: 700, fontSize: 20 }}>＋</span>
+                </div>
+              ))
+            )}
+            <button className="cancel-add-member" onClick={() => setShowAddMember(false)}>Annuler</button>
+          </div>
+        )}
+        <div className="group-info-actions">
+          <button className="add-member-btn" onClick={() => setShowAddMember(!showAddMember)}>👥 Ajouter un membre</button>
+          <button className="leave-group-btn" onClick={() => { onLeaveGroup(); onClose(); }}>🚪 Quitter le groupe</button>
+          {isAdmin && (
+            <button className="delete-group-btn" onClick={() => { if (window.confirm('Supprimer ce groupe définitivement ?')) { onDeleteGroup(); onClose(); } }}>🗑 Supprimer le groupe</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImageLightbox({ src, onClose }) {
+  return (
+    <div className="lightbox-overlay" onClick={onClose}>
+      <button className="lightbox-close" onClick={onClose}>✕</button>
+      <img src={src} alt="" className="lightbox-img" onClick={e => e.stopPropagation()} />
+    </div>
+  );
+}
+
+function VideoLightbox({ src, onClose }) {
+  return (
+    <div className="lightbox-overlay" onClick={onClose}>
+      <button className="lightbox-close" onClick={onClose}>✕</button>
+      <video src={src} className="lightbox-video" controls autoPlay onClick={e => e.stopPropagation()} />
+    </div>
+  );
+}
+
+function ProfileViewer({ user, onClose }) {
+  return (
+    <div className="lightbox-overlay" onClick={onClose}>
+      <button className="lightbox-close" onClick={onClose}>✕</button>
+      <div className="profile-viewer" onClick={e => e.stopPropagation()}>
+        {user.profile_pic ? (
+          <img src={picUrl(user.profile_pic)} alt="" className="profile-viewer-img" />
+        ) : (
+          <div className="profile-viewer-placeholder">{(user.full_name || user.username || '?')[0].toUpperCase()}</div>
+        )}
+        <h3>{user.full_name || user.username}</h3>
+        {user.phone && <p>{user.phone}</p>}
+      </div>
+    </div>
+  );
+}
+
+export default function ChatWindow({ messages, currentUser, selectedUser, selectedGroup, onlineUsers, typing, onBack, onDeleteMessage, onReply, onReaction, onRemoveReaction, onLeaveGroup, onDeleteGroup, onBlockUser, token, users }) {
   const bottomRef = useRef(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
   const bgFileRef = useRef(null);
@@ -150,17 +378,22 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
   const [msgColors, setMsgColors] = useState(() => {
     try { return JSON.parse(localStorage.getItem('msgColors') || '{}'); } catch { return {}; }
   });
+  const [recvTextColors, setRecvTextColors] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('recvTextColors') || '{}'); } catch { return {}; }
+  });
 
-  // Context menu state
-  const [contextMenu, setContextMenu] = useState(null); // { x, y, msg, isSent }
+  const [contextMenu, setContextMenu] = useState(null);
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
+  const [lightboxImg, setLightboxImg] = useState(null);
+  const [lightboxVideo, setLightboxVideo] = useState(null);
+  const [profileView, setProfileView] = useState(null);
+  const [showGroupInfo, setShowGroupInfo] = useState(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Close context menu on scroll
   useEffect(() => {
     if (!contextMenu) return;
     function handleScroll() { setContextMenu(null); }
@@ -187,6 +420,13 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
     localStorage.setItem('msgColors', JSON.stringify(updated));
   }
 
+  function setRecvTextColor(colorId) {
+    if (!chatKey) return;
+    const updated = { ...recvTextColors, [chatKey]: colorId };
+    setRecvTextColors(updated);
+    localStorage.setItem('recvTextColors', JSON.stringify(updated));
+  }
+
   function handleCustomBg(e) {
     if (!chatKey) return;
     const file = e.target.files[0];
@@ -205,14 +445,14 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
     e.target.value = '';
   }
 
-  // Right-click handler (PC)
   function handleContextMenu(e, msg, isSent) {
     e.preventDefault();
+    if (msg.deleted) return;
     setContextMenu({ x: e.clientX, y: e.clientY, msg, isSent });
   }
 
-  // Long press handlers (mobile)
   function handleTouchStart(e, msg, isSent) {
+    if (msg.deleted) return;
     longPressTriggered.current = false;
     const touch = e.touches[0];
     longPressTimer.current = setTimeout(() => {
@@ -222,17 +462,11 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
   }
 
   function handleTouchEnd() {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
   }
 
   function handleTouchMove() {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
   }
 
   if (!selectedUser && !selectedGroup) {
@@ -272,28 +506,53 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
   const fixedColor = currentMsgColorId !== 'rainbow'
     ? MSG_COLOR_OPTIONS.find(c => c.id === currentMsgColorId)?.color : null;
 
+  const currentRecvTextColorId = recvTextColors[chatKey] || 'default';
+  const recvTextColor = RECEIVED_TEXT_COLORS.find(c => c.id === currentRecvTextColorId)?.color || '#1c1c2e';
+
   const headerName = isGroup ? selectedGroup.name : (selectedUser.nickname || selectedUser.full_name || selectedUser.username);
   const headerStatus = isGroup ? 'Groupe' : typing ? 'écrit...' : isOnline ? 'en ligne' : 'hors ligne';
 
-  // Build a map of messages by ID for reply lookups
   const msgById = {};
   messages.forEach(m => { msgById[m.id] = m; });
+
+  // Build user lookup for group avatars
+  const usersById = {};
+  if (users) users.forEach(u => { usersById[u.id] = u; });
+  if (currentUser) usersById[currentUser.id] = currentUser;
+  // Also populate from message sender data (group messages include sender_pic)
+  if (isGroup) {
+    messages.forEach(m => {
+      if (m.sender_id && !usersById[m.sender_id]) {
+        usersById[m.sender_id] = { id: m.sender_id, username: m.sender_name || '?', full_name: m.sender_full_name || m.sender_name || '?', profile_pic: m.sender_pic || '' };
+      }
+    });
+  }
 
   return (
     <div className="chat-window">
       <div className="chat-header">
         <button className="back-btn" onClick={onBack}>←</button>
         {isGroup ? (
-          <div className="avatar group-avatar" style={{ width: 42, height: 42, fontSize: 20 }}>
-            {selectedGroup.name[0].toUpperCase()}
-          </div>
+          selectedGroup.pic ? (
+            <img src={picUrl(selectedGroup.pic)} alt={selectedGroup.name} className="avatar group-avatar" style={{ width: 42, height: 42, objectFit: 'cover', cursor: 'pointer' }} onClick={() => setShowGroupInfo(true)} />
+          ) : (
+            <div className="avatar group-avatar" style={{ width: 42, height: 42, fontSize: 20, cursor: 'pointer' }} onClick={() => setShowGroupInfo(true)}>
+              {selectedGroup.name[0].toUpperCase()}
+            </div>
+          )
         ) : (
-          <UserAvatar user={selectedUser} />
+          <UserAvatar user={selectedUser} onClick={() => setProfileView(selectedUser)} />
         )}
-        <div className="chat-header-info">
+        <div className="chat-header-info" onClick={() => isGroup ? setShowGroupInfo(true) : setProfileView(selectedUser)} style={{ cursor: 'pointer', flex: 1 }}>
           <span className="chat-header-name">{headerName}</span>
           <span className="chat-header-status">{headerStatus}</span>
         </div>
+        {!isGroup && onBlockUser && (
+          <button className="block-btn" onClick={() => { if (window.confirm(`Bloquer ${headerName} ?`)) onBlockUser(selectedUser.id); }} title="Bloquer">🚫</button>
+        )}
+        {isGroup && (
+          <button className="group-info-btn" onClick={() => setShowGroupInfo(true)} title="Info groupe">ℹ️</button>
+        )}
         <button className="bg-picker-btn" onClick={() => setShowBgPicker(!showBgPicker)} title="Changer le fond">🎨</button>
       </div>
       {showBgPicker && (
@@ -321,6 +580,15 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
               </button>
             );
           })}
+          <div className="color-separator">Couleur texte reçu</div>
+          {RECEIVED_TEXT_COLORS.map(opt => {
+            const currentRecvId = recvTextColors[chatKey] || 'default';
+            return (
+              <button key={'rt-' + opt.id} className={`bg-option recv-text-option ${currentRecvId === opt.id ? 'active' : ''}`} onClick={() => setRecvTextColor(opt.id)} style={{ background: opt.color, border: opt.id === 'white' ? '1px solid rgba(255,255,255,0.3)' : undefined }}>
+                <span style={{ color: opt.id === 'white' || opt.id === 'default' ? '#fff' : '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>{opt.label}</span>
+              </button>
+            );
+          })}
         </div>
       )}
       <div className="messages-container" style={bgStyle}>
@@ -328,9 +596,26 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
           {messages.map((msg, idx) => {
             const isSent = msg.sender_id === currentUser.id;
             const bubbleColor = fixedColor || rainbowColors[idx % rainbowColors.length];
-            const bubbleStyle = isSent ? { background: bubbleColor } : {};
+            const bubbleStyle = isSent && !msg.deleted ? { background: bubbleColor } : {};
+            const recvStyle = !isSent && !msg.deleted ? { color: recvTextColor } : {};
             const msgType = msg.type || 'text';
             const repliedMsg = msg.reply_to ? msgById[msg.reply_to] : null;
+            const reactions = msg.reactions || [];
+            const senderUser = isGroup && !isSent ? usersById[msg.sender_id] : null;
+
+            if (msg.deleted) {
+              return (
+                <div key={`${msg.id}-${msg.group_id || ''}`} className={`message ${isSent ? 'sent' : 'received'}`}>
+                  {isGroup && !isSent && <div className="msg-avatar-spacer" />}
+                  <div className="message-bubble deleted-bubble">
+                    <span className="deleted-message-text">🚫 Ce message a été supprimé</span>
+                    <span className="message-time">
+                      {(() => { try { const ts = msg.timestamp; return new Date(ts && !ts.endsWith('Z') ? ts + 'Z' : ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } })()}
+                    </span>
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <div
@@ -341,6 +626,11 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
                 onTouchEnd={handleTouchEnd}
                 onTouchMove={handleTouchMove}
               >
+                {isGroup && !isSent && (
+                  <div className="msg-avatar" onClick={() => senderUser && setProfileView(senderUser)}>
+                    <UserAvatar user={senderUser || { username: msg.sender_name || '?', full_name: msg.sender_full_name || msg.sender_name || '?' }} size={30} />
+                  </div>
+                )}
                 <div className="message-bubble" style={bubbleStyle}>
                   {isGroup && !isSent && (
                     <div className="group-sender-name">{msg.sender_full_name || msg.sender_name}</div>
@@ -352,18 +642,38 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
                     </div>
                   )}
                   {msgType === 'voice' && <VoiceMessage src={msg.file_url} />}
-                  {msgType === 'image' && <ImageMessage url={msg.file_url} />}
+                  {msgType === 'image' && (
+                    <img src={picUrl(msg.file_url)} alt="image" className="image-message" onClick={() => setLightboxImg(picUrl(msg.file_url))} style={{ cursor: 'pointer' }} />
+                  )}
+                  {msgType === 'video' && <VideoMessage url={msg.file_url} onFullscreen={(u) => setLightboxVideo(u)} />}
                   {msgType === 'file' && <FileMessage url={msg.file_url} name={msg.file_name} />}
-                  {msgType === 'text' && <span className="message-text">{msg.content}</span>}
-                  <span className="message-time">
-                    {(() => {
-                      try {
-                        const ts = msg.timestamp;
-                        return new Date(ts && !ts.endsWith('Z') ? ts + 'Z' : ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-                      } catch { return ''; }
-                    })()}
+                  {msgType === 'text' && <span className="message-text" style={recvStyle}>{msg.content}</span>}
+                  <span className="message-time" style={!isSent && recvTextColor !== '#1c1c2e' ? { color: recvTextColor, opacity: 0.7 } : {}}>
+                    {(() => { try { const ts = msg.timestamp; return new Date(ts && !ts.endsWith('Z') ? ts + 'Z' : ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } })()}
                   </span>
                 </div>
+                {reactions.length > 0 && (
+                  <div className="reactions-bar">
+                    {Object.entries(reactions.reduce((acc, r) => {
+                      acc[r.emoji] = acc[r.emoji] || { emoji: r.emoji, users: [] };
+                      acc[r.emoji].users.push(r);
+                      return acc;
+                    }, {})).map(([emoji, data]) => (
+                      <button
+                        key={emoji}
+                        className={`reaction-chip ${data.users.some(u => u.user_id === currentUser.id) ? 'my-reaction' : ''}`}
+                        onClick={() => {
+                          const mine = data.users.some(u => u.user_id === currentUser.id);
+                          if (mine) onRemoveReaction(msg.id, emoji, isGroup);
+                          else onReaction(msg.id, emoji, isGroup);
+                        }}
+                        title={data.users.map(u => u.full_name).join(', ')}
+                      >
+                        {emoji} {data.users.length > 1 ? data.users.length : ''}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -372,15 +682,28 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
       </div>
       {contextMenu && (
         <MessageContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          msg={contextMenu.msg}
-          isSent={contextMenu.isSent}
-          isGroup={isGroup}
-          onClose={() => setContextMenu(null)}
-          onDelete={onDeleteMessage}
-          onCopy={() => {}}
-          onReply={onReply}
+          x={contextMenu.x} y={contextMenu.y}
+          msg={contextMenu.msg} isSent={contextMenu.isSent}
+          isGroup={isGroup} onClose={() => setContextMenu(null)}
+          onDelete={onDeleteMessage} onCopy={() => {}} onReply={onReply}
+          onReact={onReaction}
+        />
+      )}
+      {lightboxImg && <ImageLightbox src={lightboxImg} onClose={() => setLightboxImg(null)} />}
+      {lightboxVideo && <VideoLightbox src={lightboxVideo} onClose={() => setLightboxVideo(null)} />}
+      {profileView && <ProfileViewer user={profileView} onClose={() => setProfileView(null)} />}
+      {showGroupInfo && selectedGroup && (
+        <GroupInfoPanel
+          group={selectedGroup} currentUser={currentUser} token={token}
+          contacts={users}
+          onClose={() => setShowGroupInfo(false)}
+          onLeaveGroup={onLeaveGroup} onDeleteGroup={onDeleteGroup}
+          onGroupUpdated={(updatedGroup) => {
+            // Update the selectedGroup pic in parent
+            if (typeof window !== 'undefined') {
+              selectedGroup.pic = updatedGroup.pic;
+            }
+          }}
         />
       )}
     </div>

@@ -8,27 +8,43 @@ export default function Login({ onLogin }) {
   const [isRegister, setIsRegister] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [profilePic, setProfilePic] = useState('');
+
+  function handlePicChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setProfilePic(reader.result);
+    reader.readAsDataURL(file);
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const endpoint = isRegister ? apiUrl('/api/register') : apiUrl('/api/login');
-      const body = isRegister
-        ? { username: fullName, password, fullName, phone }
-        : { username: fullName, password };
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error);
-        return;
+      if (isRegister) {
+        if (!fullName.trim()) { setError('Nom requis'); setLoading(false); return; }
+        if (!phone.trim()) { setError('Numéro requis'); setLoading(false); return; }
+        const res = await fetch(apiUrl('/api/register'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: phone.trim(), password, fullName: fullName.trim(), phone: phone.trim(), profilePic: profilePic || undefined })
+        });
+        const data = await res.json();
+        if (!res.ok) { setError(data.error); return; }
+        onLogin(data.user, data.token);
+      } else {
+        // Login with phone number
+        const res = await fetch(apiUrl('/api/login'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: phone.trim(), password })
+        });
+        const data = await res.json();
+        if (!res.ok) { setError(data.error); return; }
+        onLogin(data.user, data.token);
       }
-      onLogin(data.user, data.token);
     } catch {
       setError('Erreur de connexion au serveur');
     } finally {
@@ -45,23 +61,36 @@ export default function Login({ onLogin }) {
           <p>{isRegister ? 'Créer un compte' : 'Se connecter'}</p>
         </div>
         <form onSubmit={handleSubmit}>
+          {isRegister && (
+            <>
+              <label className="profile-pic-upload" style={{ display: 'flex', margin: '0 auto 14px' }}>
+                <input type="file" accept="image/*" onChange={handlePicChange} style={{ display: 'none' }} />
+                {profilePic ? (
+                  <img src={profilePic} alt="" className="profile-pic-preview" />
+                ) : (
+                  <div className="profile-pic-placeholder">
+                    📷
+                    <span className="profile-pic-text">Photo</span>
+                  </div>
+                )}
+              </label>
+              <input
+                type="text"
+                placeholder="Ton nom complet"
+                value={fullName}
+                onChange={e => setFullName(e.target.value)}
+                required
+              />
+            </>
+          )}
           <input
-            type="text"
-            placeholder="Ton nom"
-            value={fullName}
-            onChange={e => setFullName(e.target.value)}
+            type="tel"
+            placeholder="Numéro de téléphone"
+            value={phone}
+            onChange={e => setPhone(e.target.value)}
             required
             autoFocus
           />
-          {isRegister && (
-            <input
-              type="tel"
-              placeholder="Numéro de téléphone"
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              required
-            />
-          )}
           <input
             type="password"
             placeholder="Mot de passe"

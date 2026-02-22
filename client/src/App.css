@@ -693,6 +693,8 @@ body {
 .message {
   display: flex;
   max-width: 65%;
+  align-items: flex-end;
+  gap: 6px;
 }
 
 .message.sent {
@@ -701,6 +703,24 @@ body {
 
 .message.received {
   align-self: flex-start;
+}
+
+/* Group message avatar */
+.msg-avatar {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.msg-avatar .avatar {
+  width: 30px !important;
+  height: 30px !important;
+  font-size: 13px !important;
+  border-radius: 50%;
+}
+
+.msg-avatar-spacer {
+  width: 30px;
+  flex-shrink: 0;
 }
 
 .message-bubble {
@@ -1074,6 +1094,14 @@ body {
   background: linear-gradient(135deg, #e74c3c, #f39c12) !important;
 }
 
+.voice-error {
+  color: #e74c3c;
+  font-size: 12px;
+  text-align: center;
+  padding: 4px 16px;
+  background: rgba(231,76,60,0.1);
+}
+
 /* ===== BG PICKER ===== */
 .bg-picker-btn {
   background: none;
@@ -1395,11 +1423,12 @@ body {
   background: none;
   border: none;
   color: #3498db;
-  font-size: 22px;
+  font-size: 28px;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 6px 10px;
   border-radius: 8px;
   display: none;
+  font-weight: 700;
 }
 
 .back-btn:hover {
@@ -1759,4 +1788,595 @@ body {
   .recording-bar {
     padding: 8px 10px;
   }
+
+  /* Back button bigger on mobile */
+  .back-btn {
+    font-size: 30px;
+    padding: 4px 8px;
+  }
+
+  /* Group info panel */
+  .group-info-panel {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    border-radius: 0 !important;
+  }
+
+  /* Lightbox */
+  .lightbox-img, .lightbox-video {
+    max-width: 95vw !important;
+    max-height: 85vh !important;
+  }
+
+  .lightbox-close {
+    top: 12px;
+    right: 12px;
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+
+  /* Reactions on mobile */
+  .reaction-chip {
+    font-size: 13px;
+    padding: 2px 6px;
+  }
+
+  .ctx-quick-reactions button {
+    font-size: 20px;
+  }
+
+  /* Context menu */
+  .msg-context-menu {
+    min-width: 160px;
+  }
+
+  /* Block & group info buttons */
+  .block-btn, .group-info-btn {
+    font-size: 16px;
+    padding: 4px;
+  }
+
+  /* Video message */
+  .video-message {
+    max-width: 220px;
+  }
+
+  .video-play-overlay {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
+
+  /* Profile viewer */
+  .profile-viewer-img, .profile-viewer-placeholder {
+    width: 180px !important;
+    height: 180px !important;
+  }
+
+  .profile-viewer-placeholder {
+    font-size: 60px !important;
+  }
+
+  /* Group pic edit overlay always visible on mobile */
+  .group-pic-edit-overlay {
+    opacity: 0.7;
+  }
+
+  /* Group member actions */
+  .group-member-actions button {
+    padding: 6px 8px;
+  }
+}
+
+/* ===== DELETED MESSAGES ===== */
+.deleted-bubble {
+  background: rgba(255,255,255,0.05) !important;
+  border: 1px dashed rgba(255,255,255,0.15) !important;
+  box-shadow: none !important;
+}
+
+.deleted-message-text {
+  font-size: 13px;
+  font-style: italic;
+  color: #6a6a85;
+}
+
+.message.received .deleted-bubble {
+  background: rgba(0,0,0,0.04) !important;
+  border-color: rgba(0,0,0,0.1) !important;
+}
+
+.message.received .deleted-message-text {
+  color: #999;
+}
+
+/* ===== REACTIONS ===== */
+.reactions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 0 4px;
+}
+
+.reaction-chip {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: #f0f0f0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.reaction-chip:hover {
+  background: rgba(255,255,255,0.15);
+}
+
+.reaction-chip.my-reaction {
+  background: rgba(52,152,219,0.2);
+  border-color: rgba(52,152,219,0.4);
+}
+
+/* Quick reactions in context menu */
+.ctx-quick-reactions {
+  display: flex;
+  justify-content: space-around;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.ctx-quick-reactions button {
+  background: none;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  transition: transform 0.15s, background 0.15s;
+  width: auto !important;
+}
+
+.ctx-quick-reactions button:hover {
+  transform: scale(1.3);
+  background: rgba(255,255,255,0.1);
+}
+
+/* ===== GROUP INFO PANEL ===== */
+.group-info-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(6px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.group-info-panel {
+  background: #1c1c2e;
+  width: 400px;
+  max-width: 95vw;
+  max-height: 85vh;
+  border-radius: 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  border-top: 4px solid;
+  border-image: linear-gradient(90deg, #e74c3c, #f39c12, #f1c40f, #2ecc71, #3498db) 1;
+}
+
+.group-info-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.group-info-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  background: linear-gradient(90deg, #f39c12, #2ecc71, #3498db);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.group-info-close {
+  background: none;
+  border: none;
+  color: #e74c3c;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+
+.group-info-close:hover {
+  background: rgba(231,76,60,0.15);
+}
+
+.group-info-name {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.group-info-name h2 {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.group-info-name span {
+  font-size: 14px;
+  color: #6a6a85;
+}
+
+.group-info-members {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0 12px;
+}
+
+.group-info-members h4 {
+  padding: 12px 20px 8px;
+  font-size: 13px;
+  color: #6a6a85;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.group-member-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  transition: background 0.15s;
+}
+
+.group-member-item:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+.group-member-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.group-member-name {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.group-member-phone {
+  font-size: 13px;
+  color: #6a6a85;
+}
+
+.admin-badge {
+  background: linear-gradient(135deg, #f39c12, #e67e22);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+.group-member-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.group-member-actions button {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.group-member-actions button:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.remove-member-btn {
+  color: #e74c3c;
+}
+
+.group-info-actions {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.leave-group-btn {
+  background: none;
+  border: 2px solid rgba(231,76,60,0.3);
+  color: #e74c3c;
+  padding: 12px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.leave-group-btn:hover {
+  background: rgba(231,76,60,0.1);
+  border-color: #e74c3c;
+}
+
+.delete-group-btn {
+  background: rgba(231,76,60,0.12);
+  border: none;
+  color: #e74c3c;
+  padding: 12px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.delete-group-btn:hover {
+  background: rgba(231,76,60,0.25);
+}
+
+/* ===== ADD MEMBER & ADD CONTACT FROM GROUP ===== */
+.add-member-btn {
+  background: linear-gradient(135deg, #2ecc71, #3498db);
+  border: none;
+  color: #fff;
+  padding: 12px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.add-member-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(46,204,113,0.3);
+}
+
+.add-member-section {
+  padding: 12px 20px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.add-member-section h4 {
+  font-size: 13px;
+  color: #2ecc71;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.cancel-add-member {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #6a6a85;
+  padding: 8px;
+  border-radius: 10px;
+  font-size: 13px;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 8px;
+  transition: all 0.15s;
+}
+
+.cancel-add-member:hover {
+  background: rgba(255,255,255,0.05);
+  color: #f0f0f0;
+}
+
+.add-contact-from-group {
+  background: linear-gradient(135deg, #2ecc71, #3498db);
+  border: none;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.add-contact-from-group:hover {
+  transform: scale(1.15);
+}
+
+.added-badge {
+  font-size: 11px;
+  color: #2ecc71;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* ===== BLOCK BUTTON & GROUP INFO BTN ===== */
+.block-btn, .group-info-btn {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.block-btn:hover, .group-info-btn:hover {
+  transform: scale(1.15);
+}
+
+/* ===== IMAGE & VIDEO LIGHTBOX ===== */
+.lightbox-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.92);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: #fff;
+  font-size: 24px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 501;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lightbox-close:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+.lightbox-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.lightbox-video {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 8px;
+  outline: none;
+}
+
+/* ===== VIDEO MESSAGE ===== */
+.video-message {
+  position: relative;
+  cursor: pointer;
+  max-width: 280px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.video-thumb {
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+  display: block;
+  border-radius: 12px;
+}
+
+.video-play-overlay {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  pointer-events: none;
+}
+
+/* ===== PROFILE VIEWER ===== */
+.profile-viewer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile-viewer-img {
+  width: 250px;
+  height: 250px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid;
+  border-image: linear-gradient(135deg, #e74c3c, #f39c12, #2ecc71, #3498db) 1;
+  border-radius: 50%;
+}
+
+.profile-viewer-placeholder {
+  width: 250px;
+  height: 250px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e74c3c, #f39c12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 80px;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* ===== GROUP PIC EDIT ===== */
+.group-pic-wrapper {
+  position: relative;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.group-pic-edit-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0,0,0,0.6);
+  text-align: center;
+  font-size: 16px;
+  padding: 4px 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.group-pic-wrapper:hover .group-pic-edit-overlay {
+  opacity: 1;
+}
+
+.profile-viewer h3 {
+  font-size: 24px;
+  color: #fff;
+  font-weight: 700;
+}
+
+.profile-viewer p {
+  font-size: 16px;
+  color: #a0a0b8;
 }

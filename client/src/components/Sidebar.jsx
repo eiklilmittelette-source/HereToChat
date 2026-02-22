@@ -179,9 +179,19 @@ function CreateGroupModal({ onClose, onCreate, contacts }) {
   const [selected, setSelected] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [groupPic, setGroupPic] = useState('');
+  const picRef = useRef(null);
 
   function toggleMember(id) {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+
+  function handlePicChange(e) {
+    const file = e.target.files[0];
+    if (!file || file.size > 2 * 1024 * 1024) return;
+    const reader = new FileReader();
+    reader.onload = () => setGroupPic(reader.result);
+    reader.readAsDataURL(file);
   }
 
   async function handleSubmit(e) {
@@ -191,7 +201,7 @@ function CreateGroupModal({ onClose, onCreate, contacts }) {
     setLoading(true);
     setError('');
     try {
-      const result = await onCreate(name.trim(), selected);
+      const result = await onCreate(name.trim(), selected, groupPic || undefined);
       if (result.error) { setError(result.error); }
       else { onClose(); }
     } catch { setError('Erreur'); }
@@ -206,14 +216,25 @@ function CreateGroupModal({ onClose, onCreate, contacts }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, minHeight: 0 }}>
-          <input
-            type="text"
-            placeholder="Nom du groupe"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            required
-            autoFocus
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div
+              className="avatar group-avatar"
+              style={{ width: 56, height: 56, fontSize: 24, cursor: 'pointer', flexShrink: 0, overflow: 'hidden' }}
+              onClick={() => picRef.current?.click()}
+            >
+              {groupPic ? <img src={groupPic} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : '📷'}
+            </div>
+            <input ref={picRef} type="file" accept="image/*" onChange={handlePicChange} style={{ display: 'none' }} />
+            <input
+              type="text"
+              placeholder="Nom du groupe"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              required
+              autoFocus
+              style={{ flex: 1 }}
+            />
+          </div>
           <div style={{ fontSize: 13, color: '#6a6a85', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             Membres ({selected.length} sélectionné{selected.length > 1 ? 's' : ''})
           </div>
@@ -351,9 +372,13 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
             className={`user-item ${selectedGroup?.id === group.id ? 'active' : ''}`}
             onClick={() => onSelectGroup(group)}
           >
-            <div className="avatar group-avatar" style={{ fontSize: 20 }}>
-              {group.name[0].toUpperCase()}
-            </div>
+            {group.pic ? (
+              <img src={picUrl(group.pic)} alt={group.name} className="avatar group-avatar" style={{ width: 44, height: 44, objectFit: 'cover' }} />
+            ) : (
+              <div className="avatar group-avatar" style={{ fontSize: 20 }}>
+                {group.name[0].toUpperCase()}
+              </div>
+            )}
             <div className="user-item-info">
               <span className="user-item-name">{group.name}</span>
               <span className="user-item-status">Groupe</span>

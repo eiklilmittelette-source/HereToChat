@@ -5,8 +5,16 @@ const fs = require('fs');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const webpush = require('web-push');
 const db = require('./db');
 const { generateToken, verifyToken, authMiddleware } = require('./auth');
+
+// VAPID keys for push notifications
+const VAPID_PUBLIC = 'BNg_6K3VX7iLgivMYbQcKvwfglDQ_bKCsd-_UpS185prwBEtXdpu_Tyd3eWrbYPpQkwdFEXYOUfPAfmp-TNyoVM';
+const VAPID_PRIVATE = 'IdrwwzaDwC7aKsy3m2r-_9daZ4ZYtSDFedJQ3XNYw9Q';
+webpush.setVapidDetails('mailto:heretochat@example.com', VAPID_PUBLIC, VAPID_PRIVATE);
+
+// Push subscriptions stored in database (see db.js)
 
 const app = express();
 const server = http.createServer(app);
@@ -15,7 +23,7 @@ const io = new Server(server, {
 });
 
 app.use(cors({ origin: true }));
-app.use(express.json({ limit: '15mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 // Serve uploaded profile pics
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -58,10 +66,24 @@ app.post('/api/register', (req, res) => {
 });
 
 app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
-  const user = db.getUserByUsername(username);
+  const { username, password, phone } = req.body;
+  // Support login by phone or username
+  let user = null;
+  if (phone) {
+    user = db.getUserByPhone(phone.trim());
+    if (!user) {
+      // Also try as username
+      user = db.getUserByUsername(phone.trim());
+    }
+    // getUserByPhone doesn't return password_hash, re-fetch full user
+    if (user) {
+      user = db.getUserByUsername(user.username);
+    }
+  } else if (username) {
+    user = db.getUserByUsername(username);
+  }
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-    return res.status(401).json({ error: 'Username ou mot de passe incorrect' });
+    return res.status(401).json({ error: 'Numéro ou mot de passe incorrect' });
   }
   const token = generateToken({ id: user.id, username: user.username });
   res.json({
@@ -148,16 +170,21 @@ app.post('/api/upload', authMiddleware, (req, res) => {
 
   let ext = 'bin';
   let folder = 'files';
-  const dataMatch = fileData.match(/^data:([^;]+);base64,(.+)$/);
+  // Support complex MIME types like "audio/webm;codecs=opus"
+  const dataMatch = fileData.match(/^data:([^;,]+(?:;[^;,]+)*);base64,(.+)$/);
   if (dataMatch) {
-    const mime = dataMatch[1];
+    const fullMime = dataMatch[1];
+    const mime = fullMime.split(';')[0]; // Get base MIME without codecs
     const data = Buffer.from(dataMatch[2], 'base64');
     if (mime.startsWith('audio/')) {
-      ext = mime.includes('webm') ? 'webm' : mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm';
+      ext = mime.includes('webm') ? 'webm' : mime.includes('mp4') ? 'm4a' : mime.includes('aac') ? 'm4a' : mime.includes('ogg') ? 'ogg' : mime.includes('mpeg') ? 'mp3' : 'webm';
       folder = 'voice';
     } else if (mime.startsWith('image/')) {
       ext = mime.split('/')[1].replace('jpeg', 'jpg');
       folder = 'images';
+    } else if (mime.startsWith('video/')) {
+      ext = mime.includes('mp4') ? 'mp4' : mime.includes('webm') ? 'webm' : mime.includes('quicktime') ? 'mov' : fileName ? fileName.split('.').pop() : 'mp4';
+      folder = 'videos';
     } else {
       ext = fileName ? fileName.split('.').pop() : 'bin';
       folder = 'files';
@@ -184,84 +211,230 @@ app.get('/api/debug/users', (req, res) => {
 
 app.get('/api/messages/:userId', authMiddleware, (req, res) => {
   const messages = db.getMessages(req.user.id, parseInt(req.params.userId));
+  // Attach reactions
+  const ids = messages.map(m => m.id);
+  const reactionsMap = db.getReactionsForMessages(ids, 'dm');
+  messages.forEach(m => { m.reactions = reactionsMap[m.id] || []; });
   res.json(messages);
 });
 
-// Delete a DM message (only sender can delete)
+// Delete a DM message (soft delete)
 app.post('/api/messages/delete', authMiddleware, (req, res) => {
   const { messageId } = req.body;
   if (!messageId) return res.status(400).json({ error: 'ID message requis' });
   db.deleteMessage(Number(messageId), req.user.id);
-  res.json({ ok: true });
+  res.json({ ok: true, messageId: Number(messageId) });
 });
 
-// Delete a group message (only sender can delete)
+// Delete a group message (soft delete)
 app.post('/api/groups/messages/delete', authMiddleware, (req, res) => {
   const { messageId } = req.body;
   if (!messageId) return res.status(400).json({ error: 'ID message requis' });
   db.deleteGroupMessage(Number(messageId), req.user.id);
+  res.json({ ok: true, messageId: Number(messageId) });
+});
+
+// Add reaction
+app.post('/api/reactions/add', authMiddleware, (req, res) => {
+  const { messageId, messageType, emoji } = req.body;
+  if (!messageId || !emoji) return res.status(400).json({ error: 'Données manquantes' });
+  db.addReaction(Number(messageId), messageType || 'dm', req.user.id, emoji);
+  res.json({ ok: true });
+});
+
+// Remove reaction
+app.post('/api/reactions/remove', authMiddleware, (req, res) => {
+  const { messageId, messageType, emoji } = req.body;
+  if (!messageId || !emoji) return res.status(400).json({ error: 'Données manquantes' });
+  db.removeReaction(Number(messageId), messageType || 'dm', req.user.id, emoji);
   res.json({ ok: true });
 });
 
 // === GROUP ROUTES ===
 
-// Create a group
 app.post('/api/groups/create', authMiddleware, (req, res) => {
-  const { name, memberIds } = req.body;
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'Nom du groupe requis' });
+  const { name, memberIds, pic } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Nom du groupe requis' });
+  if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) return res.status(400).json({ error: 'Ajoute au moins 1 membre' });
+  // Save group pic if provided
+  let picPath = '';
+  if (pic) {
+    const matches = pic.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (matches) {
+      const ext = matches[1];
+      const data = Buffer.from(matches[2], 'base64');
+      const subDir = path.join(uploadsDir, 'groups');
+      if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+      const filename = `group-${Date.now()}.${ext}`;
+      fs.writeFileSync(path.join(subDir, filename), data);
+      picPath = `/uploads/groups/${filename}`;
+    }
   }
-  if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
-    return res.status(400).json({ error: 'Ajoute au moins 1 membre' });
-  }
-  const group = db.createGroup(name.trim(), req.user.id, memberIds);
+  const group = db.createGroup(name.trim(), req.user.id, memberIds, picPath);
   const members = db.getGroupMembers(group.id);
   res.json({ ...group, members });
 });
 
-// Get user's groups
 app.get('/api/groups', authMiddleware, (req, res) => {
   const groups = db.getGroupsForUser(req.user.id);
   res.json(groups);
 });
 
-// Get group details + members
 app.get('/api/groups/:groupId', authMiddleware, (req, res) => {
   const groupId = parseInt(req.params.groupId);
-  if (!db.isGroupMember(groupId, req.user.id)) {
-    return res.status(403).json({ error: 'Pas membre de ce groupe' });
-  }
+  if (!db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
   const members = db.getGroupMembers(groupId);
   res.json({ members });
 });
 
-// Get group messages
 app.get('/api/groups/:groupId/messages', authMiddleware, (req, res) => {
   const groupId = parseInt(req.params.groupId);
-  if (!db.isGroupMember(groupId, req.user.id)) {
-    return res.status(403).json({ error: 'Pas membre de ce groupe' });
-  }
+  if (!db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
   const messages = db.getGroupMessages(groupId);
+  const ids = messages.map(m => m.id);
+  const reactionsMap = db.getReactionsForMessages(ids, 'group');
+  messages.forEach(m => { m.reactions = reactionsMap[m.id] || []; });
   res.json(messages);
 });
 
-// Add member to group
 app.post('/api/groups/:groupId/add-member', authMiddleware, (req, res) => {
   const groupId = parseInt(req.params.groupId);
   const { userId } = req.body;
-  if (!db.isGroupMember(groupId, req.user.id)) {
-    return res.status(403).json({ error: 'Pas membre de ce groupe' });
-  }
+  if (!db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
   db.addGroupMember(groupId, Number(userId));
   res.json({ ok: true });
 });
 
-// Leave group
 app.post('/api/groups/:groupId/leave', authMiddleware, (req, res) => {
   const groupId = parseInt(req.params.groupId);
   db.removeGroupMember(groupId, req.user.id);
   res.json({ ok: true });
 });
+
+// Set admin
+app.post('/api/groups/:groupId/set-admin', authMiddleware, (req, res) => {
+  const groupId = parseInt(req.params.groupId);
+  if (!db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+  const { userId } = req.body;
+  db.setGroupAdmin(groupId, Number(userId));
+  res.json({ ok: true });
+});
+
+// Update group pic (admin only)
+app.post('/api/groups/:groupId/update-pic', authMiddleware, (req, res) => {
+  const groupId = parseInt(req.params.groupId);
+  if (!db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+  const { pic } = req.body;
+  if (!pic) return res.status(400).json({ error: 'Photo requise' });
+  const matches = pic.match(/^data:image\/(\w+);base64,(.+)$/);
+  if (!matches) return res.status(400).json({ error: 'Format invalide' });
+  const ext = matches[1];
+  const data = Buffer.from(matches[2], 'base64');
+  const subDir = path.join(uploadsDir, 'groups');
+  if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+  const filename = `group-${groupId}-${Date.now()}.${ext}`;
+  fs.writeFileSync(path.join(subDir, filename), data);
+  const picPath = `/uploads/groups/${filename}`;
+  const d = db.getDb();
+  d.run('UPDATE groups_ SET pic = ? WHERE id = ?', [picPath, groupId]);
+  const dbData = d.export();
+  fs.writeFileSync(path.join(__dirname, 'chat.db'), Buffer.from(dbData));
+  res.json({ ok: true, pic: picPath });
+});
+
+// Remove admin (admin only)
+app.post('/api/groups/:groupId/remove-admin', authMiddleware, (req, res) => {
+  const groupId = parseInt(req.params.groupId);
+  if (!db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+  const { userId } = req.body;
+  db.removeGroupAdmin(groupId, Number(userId));
+  res.json({ ok: true });
+});
+
+// Remove member (admin only)
+app.post('/api/groups/:groupId/remove-member', authMiddleware, (req, res) => {
+  const groupId = parseInt(req.params.groupId);
+  if (!db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+  const { userId } = req.body;
+  db.removeGroupMember(groupId, Number(userId));
+  res.json({ ok: true });
+});
+
+// Delete group (admin only)
+app.post('/api/groups/:groupId/delete', authMiddleware, (req, res) => {
+  const groupId = parseInt(req.params.groupId);
+  if (!db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+  const d = db.getDb();
+  d.run('DELETE FROM group_members WHERE group_id = ?', [groupId]);
+  d.run('DELETE FROM group_messages WHERE group_id = ?', [groupId]);
+  d.run('DELETE FROM groups_ WHERE id = ?', [groupId]);
+  d.run('DELETE FROM reactions WHERE message_type = ? AND message_id IN (SELECT id FROM group_messages WHERE group_id = ?)', ['group', groupId]);
+  const data = d.export();
+  fs.writeFileSync(path.join(__dirname, 'chat.db'), Buffer.from(data));
+  res.json({ ok: true });
+});
+
+// Block user
+app.post('/api/block', authMiddleware, (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: 'User requis' });
+  const d = db.getDb();
+  d.run('CREATE TABLE IF NOT EXISTS blocked (id INTEGER PRIMARY KEY AUTOINCREMENT, blocker_id INTEGER NOT NULL, blocked_id INTEGER NOT NULL, UNIQUE(blocker_id, blocked_id))');
+  d.run('INSERT OR IGNORE INTO blocked (blocker_id, blocked_id) VALUES (?, ?)', [req.user.id, Number(userId)]);
+  const data = d.export();
+  fs.writeFileSync(path.join(__dirname, 'chat.db'), Buffer.from(data));
+  res.json({ ok: true });
+});
+
+// Unblock user
+app.post('/api/unblock', authMiddleware, (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: 'User requis' });
+  const d = db.getDb();
+  try { d.run('DELETE FROM blocked WHERE blocker_id = ? AND blocked_id = ?', [req.user.id, Number(userId)]); } catch(e) {}
+  const data = d.export();
+  fs.writeFileSync(path.join(__dirname, 'chat.db'), Buffer.from(data));
+  res.json({ ok: true });
+});
+
+// Get blocked users
+app.get('/api/blocked', authMiddleware, (req, res) => {
+  const d = db.getDb();
+  try {
+    d.run('CREATE TABLE IF NOT EXISTS blocked (id INTEGER PRIMARY KEY AUTOINCREMENT, blocker_id INTEGER NOT NULL, blocked_id INTEGER NOT NULL, UNIQUE(blocker_id, blocked_id))');
+    const stmt = d.prepare('SELECT b.blocked_id, u.username, u.full_name FROM blocked b JOIN users u ON b.blocked_id = u.id WHERE b.blocker_id = ?');
+    stmt.bind([req.user.id]);
+    const list = [];
+    while (stmt.step()) list.push(stmt.getAsObject());
+    stmt.free();
+    res.json(list);
+  } catch(e) { res.json([]); }
+});
+
+// --- PUSH NOTIFICATIONS ---
+
+app.get('/api/push/vapid-key', (req, res) => {
+  res.json({ publicKey: VAPID_PUBLIC });
+});
+
+app.post('/api/push/subscribe', authMiddleware, (req, res) => {
+  const { subscription } = req.body;
+  if (!subscription) return res.status(400).json({ error: 'Subscription requise' });
+  db.savePushSubscription(req.user.id, subscription);
+  res.json({ ok: true });
+});
+
+function sendPushToUser(userId, payload) {
+  const subs = db.getPushSubscriptions(userId);
+  if (!subs || subs.length === 0) return;
+  const data = JSON.stringify(payload);
+  for (const sub of subs) {
+    webpush.sendNotification(sub, data).catch(() => {
+      // Remove invalid subscription
+      db.removePushSubscription(sub.endpoint);
+    });
+  }
+}
 
 // --- SOCKET.IO ---
 
@@ -321,6 +494,15 @@ io.on('connection', (socket) => {
       console.log(`-> destinataire ${rid} pas en ligne`);
     }
     socket.emit('receive-message', message);
+
+    // Push notification to receiver
+    const senderUser = db.getUserById(userId);
+    const senderName = senderUser ? senderUser.full_name : socket.user.username;
+    sendPushToUser(rid, {
+      title: senderName,
+      body: content || (type === 'voice' ? 'Message vocal' : type === 'image' ? 'Photo' : type === 'video' ? 'Vidéo' : fileName || 'Fichier'),
+      tag: `dm-${userId}`
+    });
   });
 
   socket.on('typing', (receiverId) => {
@@ -356,10 +538,24 @@ io.on('connection', (socket) => {
       file_name: fileName || '',
       sender_name: user ? user.username : socket.user.username,
       sender_full_name: user ? user.full_name : '',
+      sender_pic: user ? user.profile_pic : '',
       timestamp: new Date().toISOString()
     };
 
     io.to(`group-${gid}`).emit('receive-group-message', message);
+
+    // Push notification to all group members (except sender)
+    const groupMembers = db.getGroupMembers(gid);
+    const senderName2 = user ? user.full_name : socket.user.username;
+    for (const member of groupMembers) {
+      if (member.id !== userId) {
+        sendPushToUser(member.id, {
+          title: `${senderName2} (${data.groupName || 'Groupe'})`,
+          body: content || (type === 'voice' ? 'Message vocal' : type === 'image' ? 'Photo' : type === 'video' ? 'Vidéo' : fileName || 'Fichier'),
+          tag: `group-${gid}`
+        });
+      }
+    }
   });
 
   // Group typing
@@ -371,9 +567,51 @@ io.on('connection', (socket) => {
     socket.to(`group-${Number(groupId)}`).emit('group-user-stop-typing', { groupId: Number(groupId), userId });
   });
 
-  // Join group room (when creating/joining a group)
+  // Join group room
   socket.on('join-group', (groupId) => {
     socket.join(`group-${Number(groupId)}`);
+  });
+
+  // Reactions via socket (real-time)
+  socket.on('add-reaction', (data) => {
+    const { messageId, messageType, emoji } = data;
+    db.addReaction(Number(messageId), messageType || 'dm', userId, emoji);
+    const reaction = { messageId: Number(messageId), messageType, emoji, user_id: userId, full_name: socket.user.username };
+    if (messageType === 'group' && data.groupId) {
+      io.to(`group-${Number(data.groupId)}`).emit('reaction-added', reaction);
+    } else if (data.receiverId) {
+      const receiverSocket = onlineUsers.get(Number(data.receiverId));
+      if (receiverSocket) io.to(receiverSocket).emit('reaction-added', reaction);
+      socket.emit('reaction-added', reaction);
+    }
+  });
+
+  socket.on('remove-reaction', (data) => {
+    const { messageId, messageType, emoji } = data;
+    db.removeReaction(Number(messageId), messageType || 'dm', userId, emoji);
+    const reaction = { messageId: Number(messageId), messageType, emoji, user_id: userId };
+    if (messageType === 'group' && data.groupId) {
+      io.to(`group-${Number(data.groupId)}`).emit('reaction-removed', reaction);
+    } else if (data.receiverId) {
+      const receiverSocket = onlineUsers.get(Number(data.receiverId));
+      if (receiverSocket) io.to(receiverSocket).emit('reaction-removed', reaction);
+      socket.emit('reaction-removed', reaction);
+    }
+  });
+
+  // Delete message via socket (real-time soft delete)
+  socket.on('delete-message', (data) => {
+    const { messageId, messageType, groupId, receiverId } = data;
+    if (messageType === 'group') {
+      db.deleteGroupMessage(Number(messageId), userId);
+      io.to(`group-${Number(groupId)}`).emit('message-deleted', { messageId: Number(messageId), sender_name: socket.user.username });
+    } else {
+      db.deleteMessage(Number(messageId), userId);
+      const receiverSocket = onlineUsers.get(Number(receiverId));
+      const deleteData = { messageId: Number(messageId), sender_name: socket.user.username };
+      if (receiverSocket) io.to(receiverSocket).emit('message-deleted', deleteData);
+      socket.emit('message-deleted', deleteData);
+    }
   });
 
   socket.on('disconnect', () => {

@@ -42,10 +42,11 @@ async function initDb() {
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_messages_users ON messages(sender_id, receiver_id)`);
 
-  // Add new columns for voice/file messages (safe to run multiple times)
+  // Add columns (safe to run multiple times)
   try { db.run(`ALTER TABLE messages ADD COLUMN type TEXT NOT NULL DEFAULT 'text'`); } catch(e) {}
   try { db.run(`ALTER TABLE messages ADD COLUMN file_url TEXT NOT NULL DEFAULT ''`); } catch(e) {}
   try { db.run(`ALTER TABLE messages ADD COLUMN file_name TEXT NOT NULL DEFAULT ''`); } catch(e) {}
+  try { db.run(`ALTER TABLE messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`); } catch(e) {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS contacts (
@@ -82,6 +83,9 @@ async function initDb() {
     )
   `);
 
+  // Add role column for admin
+  try { db.run(`ALTER TABLE group_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'`); } catch(e) {}
+
   db.run(`
     CREATE TABLE IF NOT EXISTS group_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,8 +101,37 @@ async function initDb() {
     )
   `);
 
+  try { db.run(`ALTER TABLE group_messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`); } catch(e) {}
+
+  // Reactions table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS reactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id INTEGER NOT NULL,
+      message_type TEXT NOT NULL DEFAULT 'dm',
+      user_id INTEGER NOT NULL,
+      emoji TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(message_id, message_type, user_id, emoji)
+    )
+  `);
+
   db.run(`CREATE INDEX IF NOT EXISTS idx_group_messages ON group_messages(group_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_group_members ON group_members(group_id, user_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_reactions ON reactions(message_id, message_type)`);
+
+  // Push subscriptions table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      subscription TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id)`);
 
   save();
   return db;
@@ -120,11 +153,7 @@ function createUser(username, passwordHash, fullName, phone, profilePic) {
 function getUserByUsername(username) {
   const stmt = db.prepare('SELECT * FROM users WHERE username = ?');
   stmt.bind([username]);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return row;
-  }
+  if (stmt.step()) { const row = stmt.getAsObject(); stmt.free(); return row; }
   stmt.free();
   return null;
 }
@@ -132,11 +161,7 @@ function getUserByUsername(username) {
 function getUserById(id) {
   const stmt = db.prepare('SELECT id, username, full_name, phone, profile_pic, created_at FROM users WHERE id = ?');
   stmt.bind([id]);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return row;
-  }
+  if (stmt.step()) { const row = stmt.getAsObject(); stmt.free(); return row; }
   stmt.free();
   return null;
 }
@@ -145,9 +170,7 @@ function getAllUsers(excludeId) {
   const stmt = db.prepare('SELECT id, username, full_name, phone, profile_pic FROM users WHERE id != ?');
   stmt.bind([excludeId]);
   const users = [];
-  while (stmt.step()) {
-    users.push(stmt.getAsObject());
-  }
+  while (stmt.step()) { users.push(stmt.getAsObject()); }
   stmt.free();
   return users;
 }
@@ -171,9 +194,7 @@ function getMessages(userId1, userId2) {
   `);
   stmt.bind([userId1, userId2, userId2, userId1]);
   const messages = [];
-  while (stmt.step()) {
-    messages.push(stmt.getAsObject());
-  }
+  while (stmt.step()) { messages.push(stmt.getAsObject()); }
   stmt.free();
   return messages;
 }
@@ -181,11 +202,7 @@ function getMessages(userId1, userId2) {
 function getUserByPhone(phone) {
   const stmt = db.prepare('SELECT id, username, full_name, phone, profile_pic FROM users WHERE phone = ?');
   stmt.bind([phone]);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return row;
-  }
+  if (stmt.step()) { const row = stmt.getAsObject(); stmt.free(); return row; }
   stmt.free();
   return null;
 }
@@ -209,9 +226,7 @@ function getContacts(userId) {
   `);
   stmt.bind([userId]);
   const contacts = [];
-  while (stmt.step()) {
-    contacts.push(stmt.getAsObject());
-  }
+  while (stmt.step()) { contacts.push(stmt.getAsObject()); }
   stmt.free();
   return contacts;
 }
@@ -226,14 +241,63 @@ function updateUserProfile(id, fullName, phone, profilePic) {
   save();
 }
 
+// Soft delete - mark as deleted instead of removing
 function deleteMessage(messageId, userId) {
-  db.run('DELETE FROM messages WHERE id = ? AND sender_id = ?', [messageId, userId]);
+  db.run('UPDATE messages SET deleted = 1, content = \'\', file_url = \'\', file_name = \'\' WHERE id = ? AND sender_id = ?', [messageId, userId]);
   save();
 }
 
 function deleteGroupMessage(messageId, userId) {
-  db.run('DELETE FROM group_messages WHERE id = ? AND sender_id = ?', [messageId, userId]);
+  db.run('UPDATE group_messages SET deleted = 1, content = \'\', file_url = \'\', file_name = \'\' WHERE id = ? AND sender_id = ?', [messageId, userId]);
   save();
+}
+
+// === REACTIONS ===
+
+function addReaction(messageId, messageType, userId, emoji) {
+  db.run('INSERT OR IGNORE INTO reactions (message_id, message_type, user_id, emoji) VALUES (?, ?, ?, ?)',
+    [messageId, messageType, userId, emoji]);
+  save();
+}
+
+function removeReaction(messageId, messageType, userId, emoji) {
+  db.run('DELETE FROM reactions WHERE message_id = ? AND message_type = ? AND user_id = ? AND emoji = ?',
+    [messageId, messageType, userId, emoji]);
+  save();
+}
+
+function getReactions(messageId, messageType) {
+  const stmt = db.prepare(`
+    SELECT r.emoji, r.user_id, u.username, u.full_name
+    FROM reactions r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.message_id = ? AND r.message_type = ?
+  `);
+  stmt.bind([messageId, messageType]);
+  const reactions = [];
+  while (stmt.step()) { reactions.push(stmt.getAsObject()); }
+  stmt.free();
+  return reactions;
+}
+
+function getReactionsForMessages(messageIds, messageType) {
+  if (!messageIds.length) return {};
+  const placeholders = messageIds.map(() => '?').join(',');
+  const stmt = db.prepare(`
+    SELECT r.message_id, r.emoji, r.user_id, u.full_name
+    FROM reactions r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.message_id IN (${placeholders}) AND r.message_type = ?
+  `);
+  stmt.bind([...messageIds, messageType]);
+  const map = {};
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    if (!map[row.message_id]) map[row.message_id] = [];
+    map[row.message_id].push({ emoji: row.emoji, user_id: row.user_id, full_name: row.full_name });
+  }
+  stmt.free();
+  return map;
 }
 
 // === GROUPS ===
@@ -242,11 +306,9 @@ function createGroup(name, creatorId, memberIds, pic) {
   db.run('INSERT INTO groups_ (name, creator_id, pic) VALUES (?, ?, ?)', [name, creatorId, pic || '']);
   const result = db.exec('SELECT last_insert_rowid() as id');
   const groupId = result[0].values[0][0];
-  // Add creator as member
-  db.run('INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)', [groupId, creatorId]);
-  // Add other members
+  db.run('INSERT OR IGNORE INTO group_members (group_id, user_id, role) VALUES (?, ?, ?)', [groupId, creatorId, 'admin']);
   for (const mid of memberIds) {
-    db.run('INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)', [groupId, Number(mid)]);
+    db.run('INSERT OR IGNORE INTO group_members (group_id, user_id, role) VALUES (?, ?, ?)', [groupId, Number(mid), 'member']);
   }
   save();
   return { id: groupId, name, pic: pic || '', creator_id: creatorId };
@@ -262,25 +324,21 @@ function getGroupsForUser(userId) {
   `);
   stmt.bind([userId]);
   const groups = [];
-  while (stmt.step()) {
-    groups.push(stmt.getAsObject());
-  }
+  while (stmt.step()) { groups.push(stmt.getAsObject()); }
   stmt.free();
   return groups;
 }
 
 function getGroupMembers(groupId) {
   const stmt = db.prepare(`
-    SELECT u.id, u.username, u.full_name, u.profile_pic
+    SELECT u.id, u.username, u.full_name, u.phone, u.profile_pic, gm.role
     FROM group_members gm
     JOIN users u ON gm.user_id = u.id
     WHERE gm.group_id = ?
   `);
   stmt.bind([groupId]);
   const members = [];
-  while (stmt.step()) {
-    members.push(stmt.getAsObject());
-  }
+  while (stmt.step()) { members.push(stmt.getAsObject()); }
   stmt.free();
   return members;
 }
@@ -293,6 +351,24 @@ function isGroupMember(groupId, userId) {
   return isMember;
 }
 
+function isGroupAdmin(groupId, userId) {
+  const stmt = db.prepare("SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ? AND role = 'admin'");
+  stmt.bind([groupId, userId]);
+  const isAdmin = stmt.step();
+  stmt.free();
+  return isAdmin;
+}
+
+function setGroupAdmin(groupId, userId) {
+  db.run("UPDATE group_members SET role = 'admin' WHERE group_id = ? AND user_id = ?", [groupId, userId]);
+  save();
+}
+
+function removeGroupAdmin(groupId, userId) {
+  db.run("UPDATE group_members SET role = 'member' WHERE group_id = ? AND user_id = ?", [groupId, userId]);
+  save();
+}
+
 function saveGroupMessage(groupId, senderId, content, type, fileUrl, fileName) {
   db.run('INSERT INTO group_messages (group_id, sender_id, content, type, file_url, file_name) VALUES (?, ?, ?, ?, ?, ?)',
     [groupId, senderId, content || '', type || 'text', fileUrl || '', fileName || '']);
@@ -303,7 +379,7 @@ function saveGroupMessage(groupId, senderId, content, type, fileUrl, fileName) {
 
 function getGroupMessages(groupId) {
   const stmt = db.prepare(`
-    SELECT gm.*, u.username as sender_name, u.full_name as sender_full_name
+    SELECT gm.*, u.username as sender_name, u.full_name as sender_full_name, u.profile_pic as sender_pic
     FROM group_messages gm
     JOIN users u ON gm.sender_id = u.id
     WHERE gm.group_id = ?
@@ -311,20 +387,44 @@ function getGroupMessages(groupId) {
   `);
   stmt.bind([groupId]);
   const messages = [];
-  while (stmt.step()) {
-    messages.push(stmt.getAsObject());
-  }
+  while (stmt.step()) { messages.push(stmt.getAsObject()); }
   stmt.free();
   return messages;
 }
 
 function addGroupMember(groupId, userId) {
-  db.run('INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)', [groupId, userId]);
+  db.run("INSERT OR IGNORE INTO group_members (group_id, user_id, role) VALUES (?, ?, 'member')", [groupId, userId]);
   save();
 }
 
 function removeGroupMember(groupId, userId) {
   db.run('DELETE FROM group_members WHERE group_id = ? AND user_id = ?', [groupId, userId]);
+  save();
+}
+
+// === PUSH SUBSCRIPTIONS ===
+
+function savePushSubscription(userId, subscription) {
+  const json = JSON.stringify(subscription);
+  db.run('INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, subscription) VALUES (?, ?, ?)',
+    [userId, subscription.endpoint, json]);
+  save();
+}
+
+function getPushSubscriptions(userId) {
+  const stmt = db.prepare('SELECT endpoint, subscription FROM push_subscriptions WHERE user_id = ?');
+  stmt.bind([userId]);
+  const subs = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    try { subs.push(JSON.parse(row.subscription)); } catch {}
+  }
+  stmt.free();
+  return subs;
+}
+
+function removePushSubscription(endpoint) {
+  db.run('DELETE FROM push_subscriptions WHERE endpoint = ?', [endpoint]);
   save();
 }
 
@@ -335,7 +435,10 @@ module.exports = {
   saveMessage, getMessages, deleteMessage, deleteGroupMessage,
   updateUserProfile, getUserByPhone,
   addContact, renameContact, getContacts,
+  addReaction, removeReaction, getReactions, getReactionsForMessages,
   createGroup, getGroupsForUser, getGroupMembers, isGroupMember,
+  isGroupAdmin, setGroupAdmin, removeGroupAdmin,
   saveGroupMessage, getGroupMessages, addGroupMember, removeGroupMember,
+  savePushSubscription, getPushSubscriptions, removePushSubscription,
   getDb
 };

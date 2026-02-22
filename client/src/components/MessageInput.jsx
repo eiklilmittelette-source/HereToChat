@@ -58,43 +58,16 @@ const EMOJI_CATEGORIES = {
     '🤺','⛹️','🤾','🏌️','🏇','🧘','🏄','🏊','🤽','🚣',
     '🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖️','🎗️',
   ],
-  '🚗 Voyage': [
-    '🚗','🚕','🚙','🏎️','🚓','🚑','🚒','🚐','🛻','🚚',
-    '🚛','🚜','🏍️','🛵','🚲','🛴','🛺','🚔','🚍','🚘',
-    '✈️','🛫','🛬','🛩️','🚀','🛸','🚁','🛶','⛵','🚤',
-    '🛳️','⛴️','🚢','🗼','🗽','🏰','🏯','🎡','🎢','🎠',
-    '⛲','⛱️','🏖️','🏝️','🏔️','⛰️','🗻','🌋','🏕️','🛤️',
-  ],
   '🎵 Musique': [
     '🎵','🎶','🎼','🎤','🎧','🎷','🎸','🎹','🥁','🪘',
     '🎺','🪗','🎻','🪕','🎬','🎭','🎨','🎪','🎯','🎲',
     '🎮','🕹️','🎰','🧩',
-  ],
-  '🌍 Nature': [
-    '🌍','🌎','🌏','🌐','🗺️','🌞','🌝','🌛','🌜','🌚',
-    '🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘','☀️','🌤️',
-    '⛅','🌥️','☁️','🌦️','🌧️','⛈️','🌩️','🌨️','❄️','☃️',
-    '⛄','🌬️','💨','🌪️','🌈','🌫️','💧','💦','🌊','🔥',
-    '⭐','🌟','✨','💫','☄️','🌸','💮','🌹','🥀','🌺',
-    '🌻','🌼','🌷','🪷','🌱','🪴','🌲','🌳','🌴','🌵',
-    '🍀','☘️','🍁','🍂','🍃','🪹','🪺','🍄','🌾','🪨',
-  ],
-  '🎉 Objets': [
-    '🎉','🎊','🎈','🎁','🎀','🎗️','🏷️','💡','🔦','🕯️',
-    '🪔','📱','💻','⌨️','🖥️','🖨️','📷','📸','📹','🎥',
-    '📞','☎️','📺','📻','🎙️','⏰','⏳','🔔','🔕','📢',
-    '📣','💰','💵','💴','💶','💷','💎','⚖️','🔧','🔨',
-    '🪛','🔩','⚙️','🧲','🔬','🔭','📡','💉','🩸','💊',
-    '🩹','🩺','🚪','🪞','🛏️','🪑','🚽','🧴','🧹','🧺',
-    '📦','📫','📬','📮','🗳️','✏️','✒️','🖊️','📝','📚',
-    '📖','🔑','🗝️','🔒','🔓','🛡️','⚔️','🏳️','🏴','🚩',
   ],
   '💯 Symboles': [
     '💯','💢','💥','💫','💦','💨','🕳️','💣','💬','💭',
     '🗯️','💤','✅','❌','❓','❗','‼️','⁉️','⚠️','🚫',
     '🔞','♻️','✳️','❇️','🔆','🔅','🔱','⚜️','🔰','♾️',
     '🆗','🆕','🆒','🆙','🆓','🔝','🔜','🔛','🔚','🏧',
-    '♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓',
   ],
 };
 
@@ -131,28 +104,66 @@ export default function MessageInput({ onSend, onSendFile, onTyping, onStopTypin
     inputRef.current?.focus();
   }
 
-  // Voice recording
+  const [voiceError, setVoiceError] = useState('');
+
+  // Voice recording with codec fallback
   async function startRecording() {
+    setVoiceError('');
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setVoiceError('Micro non disponible (HTTPS requis)');
+        setTimeout(() => setVoiceError(''), 3000);
+        return;
+      }
+      if (typeof MediaRecorder === 'undefined') {
+        setVoiceError('Enregistrement non supporté');
+        setTimeout(() => setVoiceError(''), 3000);
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
+      // Try multiple mimeTypes for browser compatibility (Safari = mp4, Chrome/Firefox = webm)
+      const mimeTypes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/aac',
+        'audio/ogg;codecs=opus',
+        'audio/ogg',
+        ''
+      ];
+      let mimeType = '';
+      for (const mt of mimeTypes) {
+        if (!mt || MediaRecorder.isTypeSupported(mt)) { mimeType = mt; break; }
+      }
+      let mr;
+      try {
+        mr = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      } catch {
+        // If specified mimeType fails, try without
+        mr = new MediaRecorder(stream);
+      }
       audioChunks.current = [];
-      mr.ondataavailable = (e) => audioChunks.current.push(e.data);
+      mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) audioChunks.current.push(e.data); };
       mr.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(audioChunks.current, { type: 'audio/webm' });
+        if (audioChunks.current.length === 0) return;
+        const actualMime = mr.mimeType || mimeType || 'audio/webm';
+        const baseMime = actualMime.split(';')[0];
+        const blob = new Blob(audioChunks.current, { type: baseMime });
+        const ext = baseMime.includes('mp4') || baseMime.includes('aac') ? 'm4a' : baseMime.includes('ogg') ? 'ogg' : 'webm';
         const reader = new FileReader();
         reader.onload = async () => {
-          const base64 = reader.result;
           try {
             const res = await fetch(apiUrl('/api/upload'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ fileData: base64, fileName: 'voice.webm', fileType: 'voice' })
+              body: JSON.stringify({ fileData: reader.result, fileName: `voice.${ext}`, fileType: 'voice' })
             });
             const data = await res.json();
             if (res.ok) onSendFile('voice', data.fileUrl, 'Message vocal');
-          } catch {}
+          } catch (err) {
+            console.error('Upload vocal error:', err);
+          }
         };
         reader.readAsDataURL(blob);
       };
@@ -161,8 +172,9 @@ export default function MessageInput({ onSend, onSendFile, onTyping, onStopTypin
       setRecording(true);
       setRecordTime(0);
       recordInterval.current = setInterval(() => setRecordTime(t => t + 1), 1000);
-    } catch {
-      // Microphone access denied
+    } catch (err) {
+      setVoiceError('Micro refusé ou non disponible');
+      setTimeout(() => setVoiceError(''), 3000);
     }
   }
 
@@ -179,18 +191,18 @@ export default function MessageInput({ onSend, onSendFile, onTyping, onStopTypin
       mediaRecorder.current.ondataavailable = null;
       mediaRecorder.current.onstop = null;
       mediaRecorder.current.stop();
-      mediaRecorder.current.stream?.getTracks().forEach(t => t.stop());
+      try { mediaRecorder.current.stream?.getTracks().forEach(t => t.stop()); } catch {}
     }
     audioChunks.current = [];
     setRecording(false);
     clearInterval(recordInterval.current);
   }
 
-  // File attachment
+  // File/image/video attachment
   async function handleFileSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) return; // 10MB max
+    if (file.size > 15 * 1024 * 1024) return; // 15MB max
     const reader = new FileReader();
     reader.onload = async () => {
       try {
@@ -202,7 +214,8 @@ export default function MessageInput({ onSend, onSendFile, onTyping, onStopTypin
         const data = await res.json();
         if (res.ok) {
           const isImage = file.type.startsWith('image/');
-          onSendFile(isImage ? 'image' : 'file', data.fileUrl, file.name);
+          const isVideo = file.type.startsWith('video/');
+          onSendFile(isImage ? 'image' : isVideo ? 'video' : 'file', data.fileUrl, file.name);
         }
       } catch {}
     };
@@ -282,7 +295,7 @@ export default function MessageInput({ onSend, onSendFile, onTyping, onStopTypin
           type="file"
           onChange={handleFileSelect}
           style={{ display: 'none' }}
-          accept="image/*,.pdf,.doc,.docx,.txt,.zip,.mp3,.mp4"
+          accept="image/*,video/*,.pdf,.doc,.docx,.txt,.zip,.mp3,.mp4,.mov,.avi"
         />
         <input
           ref={inputRef}
@@ -299,6 +312,7 @@ export default function MessageInput({ onSend, onSendFile, onTyping, onStopTypin
           <button type="button" className="voice-btn" onClick={startRecording} disabled={disabled}>🎤</button>
         )}
       </form>
+      {voiceError && <div className="voice-error">{voiceError}</div>}
     </div>
   );
 }

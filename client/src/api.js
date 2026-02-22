@@ -1,6 +1,7 @@
-// Use same origin in production (served from Express), port 3001 in dev
+// In dev, use Vite proxy (same origin) so HTTPS works for mobile
+// In production (served from Express), also same origin
 const isDev = window.location.port === '5173' || window.location.port === '5174';
-const API_BASE = isDev ? `http://${window.location.hostname}:3001` : '';
+const API_BASE = isDev ? '' : '';
 
 export function apiUrl(path) {
   return `${API_BASE}${path}`;
