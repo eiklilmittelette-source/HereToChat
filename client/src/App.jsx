@@ -111,10 +111,12 @@ export default function App() {
           return [...prev, { ...msg, reactions: msg.reactions || [] }];
         });
       }
-      // Notification for incoming DM
+      // Notification for incoming DM + refresh contacts
       if (msg.sender_id !== Number(JSON.parse(localStorage.getItem('user') || '{}').id)) {
         playNotifSound();
         showNotification(msg.sender_name || 'Nouveau message', msg.content || 'Fichier');
+        // Refresh contacts list (sender auto-added as contact on server)
+        fetch(apiUrl('/api/users'), { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(setUsers).catch(() => {});
       }
     });
 
