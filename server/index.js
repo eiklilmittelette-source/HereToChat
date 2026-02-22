@@ -114,9 +114,7 @@ app.post('/api/contacts/add', authMiddleware, (req, res) => {
   if (!contact) {
     return res.status(404).json({ error: 'Aucun utilisateur avec ce numéro' });
   }
-  if (Number(contact.id) === Number(req.user.id)) {
-    return res.status(400).json({ error: 'Tu ne peux pas t\'ajouter toi-même' });
-  }
+  // Permettre de s'ajouter soi-même (notes personnelles)
   const nickname = req.body.nickname || '';
   db.addContact(req.user.id, contact.id, nickname);
   res.json({ id: contact.id, username: contact.username, full_name: contact.full_name, profile_pic: contact.profile_pic, nickname });
@@ -495,9 +493,11 @@ io.on('connection', (socket) => {
     console.log(`Message de ${userId} vers ${rid}, en ligne: ${JSON.stringify([...onlineUsers.entries()])}`);
 
     const receiverSocket = onlineUsers.get(rid);
-    if (receiverSocket) {
+    if (rid !== userId && receiverSocket) {
       console.log(`-> envoyé au socket ${receiverSocket}`);
       io.to(receiverSocket).emit('receive-message', message);
+    } else if (rid === userId) {
+      console.log(`-> message à soi-même (notes)`);
     } else {
       console.log(`-> destinataire ${rid} pas en ligne`);
     }
