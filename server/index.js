@@ -10,8 +10,8 @@ const db = require('./db');
 const { generateToken, verifyToken, authMiddleware } = require('./auth');
 
 // VAPID keys for push notifications
-const VAPID_PUBLIC = 'BNg_6K3VX7iLgivMYbQcKvwfglDQ_bKCsd-_UpS185prwBEtXdpu_Tyd3eWrbYPpQkwdFEXYOUfPAfmp-TNyoVM';
-const VAPID_PRIVATE = 'IdrwwzaDwC7aKsy3m2r-_9daZ4ZYtSDFedJQ3XNYw9Q';
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC || 'BNg_6K3VX7iLgivMYbQcKvwfglDQ_bKCsd-_UpS185prwBEtXdpu_Tyd3eWrbYPpQkwdFEXYOUfPAfmp-TNyoVM';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE || 'IdrwwzaDwC7aKsy3m2r-_9daZ4ZYtSDFedJQ3XNYw9Q';
 webpush.setVapidDetails('mailto:heretochat@example.com', VAPID_PUBLIC, VAPID_PRIVATE);
 
 // Push subscriptions stored in database (see db.js)
@@ -42,7 +42,7 @@ app.use('/uploads', express.static(uploadsDir));
 
 // --- REST API ---
 
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
   const { username, password, fullName, phone, profilePic, invitedBy } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'Nom et mot de passe requis' });
@@ -57,7 +57,7 @@ app.post('/api/register', (req, res) => {
       return res.status(400).json({ error: 'Numéro de téléphone invalide' });
     }
   }
-  const existing = db.getUserByUsername(username);
+  const existing = await db.getUserByUsername(username);
   if (existing) {
     return res.status(409).json({ error: 'Ce username existe déjà' });
   }
@@ -77,44 +77,44 @@ app.post('/api/register', (req, res) => {
 
   const hash = bcrypt.hashSync(password, 10);
   const normalizedPhone = phone ? normalizePhone(phone.trim()) : '';
-  const result = db.createUser(username, hash, fullName || username, normalizedPhone, picPath);
+  const result = await db.createUser(username, hash, fullName || username, normalizedPhone, picPath);
   const user = { id: result.lastInsertRowid, username, full_name: fullName || username, phone: normalizedPhone, profile_pic: picPath };
   // Auto-add inviter as contact
   if (invitedBy) {
     const inviterId = Number(invitedBy);
     if (inviterId && inviterId !== user.id) {
-      db.addContact(user.id, inviterId, '');
-      db.addContact(inviterId, user.id, '');
+      await db.addContact(user.id, inviterId, '');
+      await db.addContact(inviterId, user.id, '');
     }
   }
   const token = generateToken({ id: user.id, username });
   res.json({ user, token });
 });
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { username, password, phone } = req.body;
   // Support login by phone or username
   let user = null;
   if (phone) {
-    user = db.getUserByPhone(phone.trim());
-    if (!user) user = db.getUserByPhone(normalizePhone(phone.trim()));
+    user = await db.getUserByPhone(phone.trim());
+    if (!user) user = await db.getUserByPhone(normalizePhone(phone.trim()));
     if (!user) {
       // Also try normalized match against all users
-      const all = db.getAllUsers(0);
+      const all = await db.getAllUsers(0);
       const norm = normalizePhone(phone.trim());
       const found = all.find(u => normalizePhone(u.phone || '') === norm);
       if (found) user = { username: found.username };
     }
     if (!user) {
       // Also try as username
-      user = db.getUserByUsername(phone.trim());
+      user = await db.getUserByUsername(phone.trim());
     }
     // getUserByPhone doesn't return password_hash, re-fetch full user
     if (user) {
-      user = db.getUserByUsername(user.username);
+      user = await db.getUserByUsername(user.username);
     }
   } else if (username) {
-    user = db.getUserByUsername(username);
+    user = await db.getUserByUsername(username);
   }
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: 'Numéro ou mot de passe incorrect' });
@@ -126,23 +126,23 @@ app.post('/api/login', (req, res) => {
   });
 });
 
-app.get('/api/users', authMiddleware, (req, res) => {
-  const contacts = db.getContacts(req.user.id);
+app.get('/api/users', authMiddleware, async (req, res) => {
+  const contacts = await db.getContacts(req.user.id);
   res.json(contacts);
 });
 
-app.post('/api/contacts/add', authMiddleware, (req, res) => {
+app.post('/api/contacts/add', authMiddleware, async (req, res) => {
   const { phone } = req.body;
   if (!phone) {
     return res.status(400).json({ error: 'Numéro de téléphone requis' });
   }
   const normalized = normalizePhone(phone.trim());
   // Try exact match first, then normalized match
-  let contact = db.getUserByPhone(phone.trim());
-  if (!contact) contact = db.getUserByPhone(normalized);
+  let contact = await db.getUserByPhone(phone.trim());
+  if (!contact) contact = await db.getUserByPhone(normalized);
   // Also search all users for normalized match
   if (!contact) {
-    const all = db.getAllUsers(0);
+    const all = await db.getAllUsers(0);
     contact = all.find(u => normalizePhone(u.phone || '') === normalized);
   }
   if (!contact) {
@@ -150,11 +150,11 @@ app.post('/api/contacts/add', authMiddleware, (req, res) => {
   }
   // Permettre de s'ajouter soi-même (notes personnelles)
   const nickname = req.body.nickname || '';
-  db.addContact(req.user.id, contact.id, nickname);
+  await db.addContact(req.user.id, contact.id, nickname);
   res.json({ id: contact.id, username: contact.username, full_name: contact.full_name, profile_pic: contact.profile_pic, nickname });
 });
 
-app.post('/api/profile-pic', authMiddleware, (req, res) => {
+app.post('/api/profile-pic', authMiddleware, async (req, res) => {
   const { profilePic } = req.body;
   if (!profilePic) {
     return res.status(400).json({ error: 'Photo requise' });
@@ -168,22 +168,22 @@ app.post('/api/profile-pic', authMiddleware, (req, res) => {
   const filename = `${Date.now()}-${req.user.id}.${ext}`;
   fs.writeFileSync(path.join(uploadsDir, filename), data);
   const picPath = `/uploads/${filename}`;
-  db.updateUserProfile(req.user.id, null, null, picPath);
+  await db.updateUserProfile(req.user.id, null, null, picPath);
   res.json({ profile_pic: picPath });
 });
 
 // Rename a contact
-app.post('/api/contacts/rename', authMiddleware, (req, res) => {
+app.post('/api/contacts/rename', authMiddleware, async (req, res) => {
   const { contactId, nickname } = req.body;
   if (!contactId) return res.status(400).json({ error: 'Contact requis' });
-  db.renameContact(req.user.id, Number(contactId), nickname || '');
+  await db.renameContact(req.user.id, Number(contactId), nickname || '');
   res.json({ ok: true });
 });
 
 // Update profile (name and/or pic)
-app.post('/api/profile', authMiddleware, (req, res) => {
+app.post('/api/profile', authMiddleware, async (req, res) => {
   const { fullName, profilePic } = req.body;
-  const user = db.getUserById(req.user.id);
+  const user = await db.getUserById(req.user.id);
   if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
 
   let picPath = user.profile_pic;
@@ -199,7 +199,7 @@ app.post('/api/profile', authMiddleware, (req, res) => {
   }
 
   const newName = fullName && fullName.trim() ? fullName.trim() : user.full_name;
-  db.updateUserProfile(req.user.id, newName, user.phone, picPath);
+  await db.updateUserProfile(req.user.id, newName, user.phone, picPath);
   res.json({ full_name: newName, profile_pic: picPath });
 });
 
@@ -240,59 +240,51 @@ app.post('/api/upload', authMiddleware, (req, res) => {
   }
 });
 
-// Debug route - voir tous les utilisateurs
-app.get('/api/debug/users', (req, res) => {
-  const stmt = db.getDb().prepare('SELECT id, username, full_name, phone FROM users');
-  const users = [];
-  while (stmt.step()) { users.push(stmt.getAsObject()); }
-  stmt.free();
-  res.json(users);
-});
 
-app.get('/api/messages/:userId', authMiddleware, (req, res) => {
-  const messages = db.getMessages(req.user.id, parseInt(req.params.userId));
+app.get('/api/messages/:userId', authMiddleware, async (req, res) => {
+  const messages = await db.getMessages(req.user.id, parseInt(req.params.userId));
   // Attach reactions
   const ids = messages.map(m => m.id);
-  const reactionsMap = db.getReactionsForMessages(ids, 'dm');
+  const reactionsMap = await db.getReactionsForMessages(ids, 'dm');
   messages.forEach(m => { m.reactions = reactionsMap[m.id] || []; });
   res.json(messages);
 });
 
 // Delete a DM message (soft delete)
-app.post('/api/messages/delete', authMiddleware, (req, res) => {
+app.post('/api/messages/delete', authMiddleware, async (req, res) => {
   const { messageId } = req.body;
   if (!messageId) return res.status(400).json({ error: 'ID message requis' });
-  db.deleteMessage(Number(messageId), req.user.id);
+  await db.deleteMessage(Number(messageId), req.user.id);
   res.json({ ok: true, messageId: Number(messageId) });
 });
 
 // Delete a group message (soft delete)
-app.post('/api/groups/messages/delete', authMiddleware, (req, res) => {
+app.post('/api/groups/messages/delete', authMiddleware, async (req, res) => {
   const { messageId } = req.body;
   if (!messageId) return res.status(400).json({ error: 'ID message requis' });
-  db.deleteGroupMessage(Number(messageId), req.user.id);
+  await db.deleteGroupMessage(Number(messageId), req.user.id);
   res.json({ ok: true, messageId: Number(messageId) });
 });
 
 // Add reaction
-app.post('/api/reactions/add', authMiddleware, (req, res) => {
+app.post('/api/reactions/add', authMiddleware, async (req, res) => {
   const { messageId, messageType, emoji } = req.body;
   if (!messageId || !emoji) return res.status(400).json({ error: 'Données manquantes' });
-  db.addReaction(Number(messageId), messageType || 'dm', req.user.id, emoji);
+  await db.addReaction(Number(messageId), messageType || 'dm', req.user.id, emoji);
   res.json({ ok: true });
 });
 
 // Remove reaction
-app.post('/api/reactions/remove', authMiddleware, (req, res) => {
+app.post('/api/reactions/remove', authMiddleware, async (req, res) => {
   const { messageId, messageType, emoji } = req.body;
   if (!messageId || !emoji) return res.status(400).json({ error: 'Données manquantes' });
-  db.removeReaction(Number(messageId), messageType || 'dm', req.user.id, emoji);
+  await db.removeReaction(Number(messageId), messageType || 'dm', req.user.id, emoji);
   res.json({ ok: true });
 });
 
 // === GROUP ROUTES ===
 
-app.post('/api/groups/create', authMiddleware, (req, res) => {
+app.post('/api/groups/create', authMiddleware, async (req, res) => {
   const { name, memberIds, pic } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'Nom du groupe requis' });
   if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) return res.status(400).json({ error: 'Ajoute au moins 1 membre' });
@@ -310,60 +302,60 @@ app.post('/api/groups/create', authMiddleware, (req, res) => {
       picPath = `/uploads/groups/${filename}`;
     }
   }
-  const group = db.createGroup(name.trim(), req.user.id, memberIds, picPath);
-  const members = db.getGroupMembers(group.id);
+  const group = await db.createGroup(name.trim(), req.user.id, memberIds, picPath);
+  const members = await db.getGroupMembers(group.id);
   res.json({ ...group, members });
 });
 
-app.get('/api/groups', authMiddleware, (req, res) => {
-  const groups = db.getGroupsForUser(req.user.id);
+app.get('/api/groups', authMiddleware, async (req, res) => {
+  const groups = await db.getGroupsForUser(req.user.id);
   res.json(groups);
 });
 
-app.get('/api/groups/:groupId', authMiddleware, (req, res) => {
+app.get('/api/groups/:groupId', authMiddleware, async (req, res) => {
   const groupId = parseInt(req.params.groupId);
-  if (!db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
-  const members = db.getGroupMembers(groupId);
+  if (!await db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
+  const members = await db.getGroupMembers(groupId);
   res.json({ members });
 });
 
-app.get('/api/groups/:groupId/messages', authMiddleware, (req, res) => {
+app.get('/api/groups/:groupId/messages', authMiddleware, async (req, res) => {
   const groupId = parseInt(req.params.groupId);
-  if (!db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
-  const messages = db.getGroupMessages(groupId);
+  if (!await db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
+  const messages = await db.getGroupMessages(groupId);
   const ids = messages.map(m => m.id);
-  const reactionsMap = db.getReactionsForMessages(ids, 'group');
+  const reactionsMap = await db.getReactionsForMessages(ids, 'group');
   messages.forEach(m => { m.reactions = reactionsMap[m.id] || []; });
   res.json(messages);
 });
 
-app.post('/api/groups/:groupId/add-member', authMiddleware, (req, res) => {
+app.post('/api/groups/:groupId/add-member', authMiddleware, async (req, res) => {
   const groupId = parseInt(req.params.groupId);
   const { userId } = req.body;
-  if (!db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
-  db.addGroupMember(groupId, Number(userId));
+  if (!await db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
+  await db.addGroupMember(groupId, Number(userId));
   res.json({ ok: true });
 });
 
-app.post('/api/groups/:groupId/leave', authMiddleware, (req, res) => {
+app.post('/api/groups/:groupId/leave', authMiddleware, async (req, res) => {
   const groupId = parseInt(req.params.groupId);
-  db.removeGroupMember(groupId, req.user.id);
+  await db.removeGroupMember(groupId, req.user.id);
   res.json({ ok: true });
 });
 
 // Set admin
-app.post('/api/groups/:groupId/set-admin', authMiddleware, (req, res) => {
+app.post('/api/groups/:groupId/set-admin', authMiddleware, async (req, res) => {
   const groupId = parseInt(req.params.groupId);
-  if (!db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+  if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
   const { userId } = req.body;
-  db.setGroupAdmin(groupId, Number(userId));
+  await db.setGroupAdmin(groupId, Number(userId));
   res.json({ ok: true });
 });
 
 // Update group pic (admin only)
-app.post('/api/groups/:groupId/update-pic', authMiddleware, (req, res) => {
+app.post('/api/groups/:groupId/update-pic', authMiddleware, async (req, res) => {
   const groupId = parseInt(req.params.groupId);
-  if (!db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+  if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
   const { pic } = req.body;
   if (!pic) return res.status(400).json({ error: 'Photo requise' });
   const matches = pic.match(/^data:image\/(\w+);base64,(.+)$/);
@@ -375,78 +367,56 @@ app.post('/api/groups/:groupId/update-pic', authMiddleware, (req, res) => {
   const filename = `group-${groupId}-${Date.now()}.${ext}`;
   fs.writeFileSync(path.join(subDir, filename), data);
   const picPath = `/uploads/groups/${filename}`;
-  const d = db.getDb();
-  d.run('UPDATE groups_ SET pic = ? WHERE id = ?', [picPath, groupId]);
-  const dbData = d.export();
-  fs.writeFileSync(path.join(__dirname, 'chat.db'), Buffer.from(dbData));
+  await db.updateGroupPic(groupId, picPath);
   res.json({ ok: true, pic: picPath });
 });
 
 // Remove admin (admin only)
-app.post('/api/groups/:groupId/remove-admin', authMiddleware, (req, res) => {
+app.post('/api/groups/:groupId/remove-admin', authMiddleware, async (req, res) => {
   const groupId = parseInt(req.params.groupId);
-  if (!db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+  if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
   const { userId } = req.body;
-  db.removeGroupAdmin(groupId, Number(userId));
+  await db.removeGroupAdmin(groupId, Number(userId));
   res.json({ ok: true });
 });
 
 // Remove member (admin only)
-app.post('/api/groups/:groupId/remove-member', authMiddleware, (req, res) => {
+app.post('/api/groups/:groupId/remove-member', authMiddleware, async (req, res) => {
   const groupId = parseInt(req.params.groupId);
-  if (!db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+  if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
   const { userId } = req.body;
-  db.removeGroupMember(groupId, Number(userId));
+  await db.removeGroupMember(groupId, Number(userId));
   res.json({ ok: true });
 });
 
 // Delete group (admin only)
-app.post('/api/groups/:groupId/delete', authMiddleware, (req, res) => {
+app.post('/api/groups/:groupId/delete', authMiddleware, async (req, res) => {
   const groupId = parseInt(req.params.groupId);
-  if (!db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
-  const d = db.getDb();
-  d.run('DELETE FROM reactions WHERE message_type = ? AND message_id IN (SELECT id FROM group_messages WHERE group_id = ?)', ['group', groupId]);
-  d.run('DELETE FROM group_members WHERE group_id = ?', [groupId]);
-  d.run('DELETE FROM group_messages WHERE group_id = ?', [groupId]);
-  d.run('DELETE FROM groups_ WHERE id = ?', [groupId]);
-  const data = d.export();
-  fs.writeFileSync(path.join(__dirname, 'chat.db'), Buffer.from(data));
+  if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+  await db.deleteGroup(groupId);
   res.json({ ok: true });
 });
 
 // Block user
-app.post('/api/block', authMiddleware, (req, res) => {
+app.post('/api/block', authMiddleware, async (req, res) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).json({ error: 'User requis' });
-  const d = db.getDb();
-  d.run('CREATE TABLE IF NOT EXISTS blocked (id INTEGER PRIMARY KEY AUTOINCREMENT, blocker_id INTEGER NOT NULL, blocked_id INTEGER NOT NULL, UNIQUE(blocker_id, blocked_id))');
-  d.run('INSERT OR IGNORE INTO blocked (blocker_id, blocked_id) VALUES (?, ?)', [req.user.id, Number(userId)]);
-  const data = d.export();
-  fs.writeFileSync(path.join(__dirname, 'chat.db'), Buffer.from(data));
+  await db.blockUser(req.user.id, Number(userId));
   res.json({ ok: true });
 });
 
 // Unblock user
-app.post('/api/unblock', authMiddleware, (req, res) => {
+app.post('/api/unblock', authMiddleware, async (req, res) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).json({ error: 'User requis' });
-  const d = db.getDb();
-  try { d.run('DELETE FROM blocked WHERE blocker_id = ? AND blocked_id = ?', [req.user.id, Number(userId)]); } catch(e) {}
-  const data = d.export();
-  fs.writeFileSync(path.join(__dirname, 'chat.db'), Buffer.from(data));
+  await db.unblockUser(req.user.id, Number(userId));
   res.json({ ok: true });
 });
 
 // Get blocked users
-app.get('/api/blocked', authMiddleware, (req, res) => {
-  const d = db.getDb();
+app.get('/api/blocked', authMiddleware, async (req, res) => {
   try {
-    d.run('CREATE TABLE IF NOT EXISTS blocked (id INTEGER PRIMARY KEY AUTOINCREMENT, blocker_id INTEGER NOT NULL, blocked_id INTEGER NOT NULL, UNIQUE(blocker_id, blocked_id))');
-    const stmt = d.prepare('SELECT b.blocked_id, u.username, u.full_name FROM blocked b JOIN users u ON b.blocked_id = u.id WHERE b.blocker_id = ?');
-    stmt.bind([req.user.id]);
-    const list = [];
-    while (stmt.step()) list.push(stmt.getAsObject());
-    stmt.free();
+    const list = await db.getBlockedUsers(req.user.id);
     res.json(list);
   } catch(e) { res.json([]); }
 });
@@ -457,21 +427,21 @@ app.get('/api/push/vapid-key', (req, res) => {
   res.json({ publicKey: VAPID_PUBLIC });
 });
 
-app.post('/api/push/subscribe', authMiddleware, (req, res) => {
+app.post('/api/push/subscribe', authMiddleware, async (req, res) => {
   const { subscription } = req.body;
   if (!subscription) return res.status(400).json({ error: 'Subscription requise' });
-  db.savePushSubscription(req.user.id, subscription);
+  await db.savePushSubscription(req.user.id, subscription);
   res.json({ ok: true });
 });
 
-function sendPushToUser(userId, payload) {
-  const subs = db.getPushSubscriptions(userId);
+async function sendPushToUser(userId, payload) {
+  const subs = await db.getPushSubscriptions(userId);
   if (!subs || subs.length === 0) return;
   const data = JSON.stringify(payload);
   for (const sub of subs) {
-    webpush.sendNotification(sub, data).catch(() => {
+    webpush.sendNotification(sub, data).catch(async () => {
       // Remove invalid subscription
-      db.removePushSubscription(sub.endpoint);
+      await db.removePushSubscription(sub.endpoint);
     });
   }
 }
@@ -490,7 +460,7 @@ io.use((socket, next) => {
   next();
 });
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   const userId = Number(socket.user.id);
   onlineUsers.set(userId, socket.id);
 
@@ -498,20 +468,20 @@ io.on('connection', (socket) => {
   console.log(`${socket.user.username} connecté (id=${userId}, socket=${socket.id})`);
 
   // Auto-join all group rooms
-  const userGroups = db.getGroupsForUser(userId);
+  const userGroups = await db.getGroupsForUser(userId);
   for (const g of userGroups) {
     socket.join(`group-${g.id}`);
   }
 
-  socket.on('send-message', (data) => {
+  socket.on('send-message', async (data) => {
     const { receiverId, content, type, fileUrl, fileName, replyTo } = data;
     if ((!content && !fileUrl) || !receiverId) return;
 
     const rid = Number(receiverId);
     // Auto-add contact both ways if not already contacts
-    db.addContact(userId, rid, '');
-    db.addContact(rid, userId, '');
-    const result = db.saveMessage(userId, rid, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null);
+    await db.addContact(userId, rid, '');
+    await db.addContact(rid, userId, '');
+    const result = await db.saveMessage(userId, rid, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null);
     const message = {
       id: Number(result.lastInsertRowid),
       sender_id: userId,
@@ -539,9 +509,9 @@ io.on('connection', (socket) => {
     socket.emit('receive-message', message);
 
     // Push notification to receiver
-    const senderUser = db.getUserById(userId);
+    const senderUser = await db.getUserById(userId);
     const senderName = senderUser ? senderUser.full_name : socket.user.username;
-    sendPushToUser(rid, {
+    await sendPushToUser(rid, {
       title: senderName,
       body: content || (type === 'voice' ? 'Message vocal' : type === 'image' ? 'Photo' : type === 'video' ? 'Vidéo' : fileName || 'Fichier'),
       tag: `dm-${userId}`
@@ -563,14 +533,14 @@ io.on('connection', (socket) => {
   });
 
   // Group message
-  socket.on('send-group-message', (data) => {
+  socket.on('send-group-message', async (data) => {
     const { groupId, content, type, fileUrl, fileName, replyTo } = data;
     if ((!content && !fileUrl) || !groupId) return;
     const gid = Number(groupId);
-    if (!db.isGroupMember(gid, userId)) return;
+    if (!await db.isGroupMember(gid, userId)) return;
 
-    const result = db.saveGroupMessage(gid, userId, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null);
-    const user = db.getUserById(userId);
+    const result = await db.saveGroupMessage(gid, userId, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null);
+    const user = await db.getUserById(userId);
     const message = {
       id: Number(result.lastInsertRowid),
       group_id: gid,
@@ -589,11 +559,11 @@ io.on('connection', (socket) => {
     io.to(`group-${gid}`).emit('receive-group-message', message);
 
     // Push notification to all group members (except sender)
-    const groupMembers = db.getGroupMembers(gid);
+    const groupMembers = await db.getGroupMembers(gid);
     const senderName2 = user ? user.full_name : socket.user.username;
     for (const member of groupMembers) {
       if (member.id !== userId) {
-        sendPushToUser(member.id, {
+        await sendPushToUser(member.id, {
           title: `${senderName2} (${data.groupName || 'Groupe'})`,
           body: content || (type === 'voice' ? 'Message vocal' : type === 'image' ? 'Photo' : type === 'video' ? 'Vidéo' : fileName || 'Fichier'),
           tag: `group-${gid}`
@@ -617,9 +587,9 @@ io.on('connection', (socket) => {
   });
 
   // Reactions via socket (real-time)
-  socket.on('add-reaction', (data) => {
+  socket.on('add-reaction', async (data) => {
     const { messageId, messageType, emoji } = data;
-    db.addReaction(Number(messageId), messageType || 'dm', userId, emoji);
+    await db.addReaction(Number(messageId), messageType || 'dm', userId, emoji);
     const reaction = { messageId: Number(messageId), messageType, emoji, user_id: userId, full_name: socket.user.username };
     if (messageType === 'group' && data.groupId) {
       io.to(`group-${Number(data.groupId)}`).emit('reaction-added', reaction);
@@ -630,9 +600,9 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('remove-reaction', (data) => {
+  socket.on('remove-reaction', async (data) => {
     const { messageId, messageType, emoji } = data;
-    db.removeReaction(Number(messageId), messageType || 'dm', userId, emoji);
+    await db.removeReaction(Number(messageId), messageType || 'dm', userId, emoji);
     const reaction = { messageId: Number(messageId), messageType, emoji, user_id: userId };
     if (messageType === 'group' && data.groupId) {
       io.to(`group-${Number(data.groupId)}`).emit('reaction-removed', reaction);
@@ -644,13 +614,13 @@ io.on('connection', (socket) => {
   });
 
   // Delete message via socket (real-time soft delete)
-  socket.on('delete-message', (data) => {
+  socket.on('delete-message', async (data) => {
     const { messageId, messageType, groupId, receiverId } = data;
     if (messageType === 'group') {
-      db.deleteGroupMessage(Number(messageId), userId);
+      await db.deleteGroupMessage(Number(messageId), userId);
       io.to(`group-${Number(groupId)}`).emit('message-deleted', { messageId: Number(messageId), sender_name: socket.user.username });
     } else {
-      db.deleteMessage(Number(messageId), userId);
+      await db.deleteMessage(Number(messageId), userId);
       const receiverSocket = onlineUsers.get(Number(receiverId));
       const deleteData = { messageId: Number(messageId), sender_name: socket.user.username };
       if (receiverSocket) io.to(receiverSocket).emit('message-deleted', deleteData);

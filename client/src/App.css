@@ -450,6 +450,18 @@ body {
   font-size: 14px;
 }
 
+.search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: #f0f0f0;
+  font-size: 14px;
+}
+.search-input::placeholder {
+  color: #6a6a85;
+}
+
 .user-list {
   flex: 1;
   overflow-y: auto;

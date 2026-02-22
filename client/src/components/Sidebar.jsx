@@ -426,6 +426,17 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
   const [renamingContact, setRenamingContact] = useState(null);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filteredUsers = users.filter(u => {
+    if (!search.trim()) return true;
+    const s = search.toLowerCase();
+    return (u.nickname || '').toLowerCase().includes(s) || (u.full_name || '').toLowerCase().includes(s) || (u.username || '').toLowerCase().includes(s) || (u.phone || '').toLowerCase().includes(s);
+  });
+  const filteredGroups = (groups || []).filter(g => {
+    if (!search.trim()) return true;
+    return (g.name || '').toLowerCase().includes(search.toLowerCase());
+  });
 
   return (
     <div className={`sidebar ${className || ''}`}>
@@ -451,11 +462,17 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
       </div>
       <div className="sidebar-search">
         <span className="search-icon">🔍</span>
-        <span className="search-text">Rechercher ou démarrer une discussion</span>
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Rechercher..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
       </div>
       <div className="user-list">
         {/* Contacts */}
-        {users.map(user => (
+        {filteredUsers.map(user => (
           <div
             key={user.id}
             className={`user-item ${selectedUser?.id === user.id && !selectedGroup ? 'active' : ''}`}
@@ -477,10 +494,10 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
           </div>
         ))}
         {/* Groups */}
-        {(groups || []).length > 0 && (
+        {filteredGroups.length > 0 && (
           <div className="group-section-label">Groupes</div>
         )}
-        {(groups || []).map(group => (
+        {filteredGroups.map(group => (
           <div
             key={`g-${group.id}`}
             className={`user-item ${selectedGroup?.id === group.id ? 'active' : ''}`}
