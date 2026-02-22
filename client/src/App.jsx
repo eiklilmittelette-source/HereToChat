@@ -16,19 +16,13 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+const notifAudio = new Audio('/notif.wav');
+notifAudio.volume = 1.0;
+
 function playNotifSound() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.setValueAtTime(880, ctx.currentTime);
-    osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.3);
+    notifAudio.currentTime = 0;
+    notifAudio.play().catch(() => {});
   } catch {}
 }
 
