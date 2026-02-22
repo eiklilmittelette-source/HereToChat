@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="dragonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#e74c3c"/>
+      <stop offset="25%" style="stop-color:#f39c12"/>
+      <stop offset="50%" style="stop-color:#2ecc71"/>
+      <stop offset="75%" style="stop-color:#3498db"/>
+      <stop offset="100%" style="stop-color:#9b59b6"/>
+    </linearGradient>
+  </defs>
+  <!-- Body -->
+  <ellipse cx="90" cy="130" rx="45" ry="35" fill="url(#dragonGrad)"/>
+  <!-- Neck -->
+  <path d="M90 100 Q85 75 75 60" stroke="url(#dragonGrad)" stroke-width="18" fill="none" stroke-linecap="round"/>
+  <!-- Head -->
+  <circle cx="70" cy="52" r="22" fill="url(#dragonGrad)"/>
+  <!-- Eye -->
+  <circle cx="63" cy="48" r="5" fill="white"/>
+  <circle cx="62" cy="47" r="3" fill="#1c1c2e"/>
+  <circle cx="61" cy="46" r="1" fill="white"/>
+  <!-- Mouth smile -->
+  <path d="M56 58 Q65 65 76 58" stroke="#1c1c2e" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- Horns -->
+  <path d="M58 35 L50 18" stroke="#f39c12" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M78 35 L85 20" stroke="#e74c3c" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <!-- Wings -->
+  <path d="M105 110 Q145 70 160 85 Q150 95 135 100 Q155 80 165 95 Q150 105 130 110" fill="#3498db" opacity="0.8"/>
+  <path d="M100 105 Q130 60 148 75 Q140 85 125 90 Q143 70 152 82 Q140 95 120 105" fill="#9b59b6" opacity="0.6"/>
+  <!-- Tail -->
+  <path d="M130 145 Q155 150 165 140 Q172 132 180 138" stroke="url(#dragonGrad)" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <!-- Tail tip -->
+  <path d="M178 133 L185 125 L182 140 Z" fill="#e74c3c"/>
+  <!-- Legs -->
+  <rect x="70" y="155" width="10" height="18" rx="5" fill="url(#dragonGrad)"/>
+  <rect x="100" y="155" width="10" height="18" rx="5" fill="url(#dragonGrad)"/>
+  <!-- Speech bubble -->
+  <rect x="105" y="15" width="65" height="35" rx="12" fill="white" stroke="#e74c3c" stroke-width="2"/>
+  <polygon points="110,50 118,50 108,60" fill="white" stroke="#e74c3c" stroke-width="2"/>
+  <polygon points="111,49 117,49 109,57" fill="white"/>
+  <!-- Hi! text -->
+  <text x="137" y="39" font-family="Arial,sans-serif" font-weight="900" font-size="22" fill="url(#dragonGrad)" text-anchor="middle">Hi!</text>
+  <!-- Sparkles -->
+  <text x="25" y="75" font-size="14">✨</text>
+  <text x="170" y="60" font-size="12">✨</text>
+  <text x="45" y="170" font-size="10">✨</text>
+</svg>

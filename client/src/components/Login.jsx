@@ -58,7 +58,7 @@ export default function Login({ onLogin }) {
     <div className="login-page">
       <div className="login-card">
         <div className="login-header">
-          <div className="login-icon">💬</div>
+          <div className="login-icon"><img src="/dragon-logo.svg" alt="HereToChat" style={{ width: 80, height: 80 }} /></div>
           <h1>HereToChat</h1>
           <p>{isRegister ? 'Créer un compte' : 'Se connecter'}</p>
           {hasInvite && <p style={{ color: '#2ecc71', fontSize: 13, marginTop: 6 }}>Un ami t'a invité ! Inscris-toi pour le retrouver</p>}
