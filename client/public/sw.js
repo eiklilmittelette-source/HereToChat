@@ -1,4 +1,4 @@
-const CACHE_NAME = 'heretochat-v4';
+const CACHE_NAME = 'heretochat-v5';
 
 self.addEventListener('install', () => self.skipWaiting());
 
@@ -28,9 +28,11 @@ self.addEventListener('push', (event) => {
     body: data.body || 'Nouveau message',
     icon: '/dragon-logo.svg',
     badge: '/dragon-logo.svg',
-    vibrate: [200, 100, 200],
+    vibrate: [300, 100, 300, 100, 300],
     tag: data.tag || 'message',
     renotify: true,
+    silent: false,
+    requireInteraction: true,
     data: { url: '/' }
   };
 

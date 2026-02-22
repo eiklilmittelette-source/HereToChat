@@ -16,6 +16,22 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+function playNotifSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch {}
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
@@ -97,6 +113,7 @@ export default function App() {
       }
       // Notification for incoming DM
       if (msg.sender_id !== Number(JSON.parse(localStorage.getItem('user') || '{}').id)) {
+        playNotifSound();
         showNotification(msg.sender_name || 'Nouveau message', msg.content || 'Fichier');
       }
     });
@@ -112,6 +129,7 @@ export default function App() {
       // Notification for group message
       const currentUserId = Number(JSON.parse(localStorage.getItem('user') || '{}').id);
       if (msg.sender_id !== currentUserId) {
+        playNotifSound();
         showNotification(msg.sender_full_name || msg.sender_name || 'Groupe', msg.content || 'Fichier');
       }
     });
