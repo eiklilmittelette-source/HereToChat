@@ -241,7 +241,7 @@ async function saveMessage(senderId, receiverId, content, type, fileUrl, fileNam
 
 async function getMessages(userId1, userId2) {
   return query(
-    `SELECT m.*, u.username as sender_name FROM messages m JOIN users u ON m.sender_id = u.id WHERE (m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1) ORDER BY m.timestamp ASC`,
+    `SELECT m.*, u.username as sender_name FROM messages m JOIN users u ON m.sender_id = u.id WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1)) AND m.deleted = 0 ORDER BY m.timestamp ASC`,
     [userId1, userId2]
   );
 }
@@ -398,7 +398,7 @@ async function saveGroupMessage(groupId, senderId, content, type, fileUrl, fileN
 
 async function getGroupMessages(groupId) {
   return query(
-    `SELECT gm.*, u.username as sender_name, u.full_name as sender_full_name, u.profile_pic as sender_pic FROM group_messages gm JOIN users u ON gm.sender_id = u.id WHERE gm.group_id = $1 ORDER BY gm.timestamp ASC`,
+    `SELECT gm.*, u.username as sender_name, u.full_name as sender_full_name, u.profile_pic as sender_pic FROM group_messages gm JOIN users u ON gm.sender_id = u.id WHERE gm.group_id = $1 AND gm.deleted = 0 ORDER BY gm.timestamp ASC`,
     [groupId]
   );
 }
@@ -484,5 +484,5 @@ module.exports = {
   savePushSubscription, getPushSubscriptions, removePushSubscription,
   blockUser, unblockUser, getBlockedUsers,
   updateGroupPic, deleteGroup,
-  getDb, run, query
+  getDb, run, query, queryOne
 };

@@ -202,7 +202,7 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
   function handlePicSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) return;
+    if (file.size > 2 * 1024 * 1024) { alert('Photo trop grande (max 2 Mo)'); return; }
     const reader = new FileReader();
     reader.onload = () => {
       setPicPreview(reader.result);

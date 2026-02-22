@@ -53,7 +53,7 @@ app.post('/api/register', async (req, res) => {
   // Validate phone number
   if (phone) {
     const cleaned = phone.trim().replace(/[\s\-\.\(\)]/g, '');
-    if (!/^(\+?\d{10,15}|0\d{9})$/.test(cleaned)) {
+    if (!/^\+?\d{6,15}$/.test(cleaned)) {
       return res.status(400).json({ error: 'Numéro de téléphone invalide' });
     }
   }
@@ -103,7 +103,7 @@ app.post('/api/login', async (req, res) => {
       const all = await db.getAllUsers(0);
       const norm = normalizePhone(phone.trim());
       const found = all.find(u => normalizePhone(u.phone || '') === norm);
-      if (found) user = { username: found.username };
+      if (found) user = found;
     }
     if (!user) {
       // Also try as username
@@ -478,6 +478,11 @@ io.on('connection', async (socket) => {
     if ((!content && !fileUrl) || !receiverId) return;
 
     const rid = Number(receiverId);
+    // Check if blocked
+    const blocked = await db.getBlockedUsers(rid);
+    if (blocked.some(b => b.blocked_id === userId)) return; // receiver blocked sender
+    const blocked2 = await db.getBlockedUsers(userId);
+    if (blocked2.some(b => b.blocked_id === rid)) return; // sender blocked receiver
     // Auto-add contact both ways if not already contacts
     await db.addContact(userId, rid, '');
     await db.addContact(rid, userId, '');
@@ -560,11 +565,13 @@ io.on('connection', async (socket) => {
 
     // Push notification to all group members (except sender)
     const groupMembers = await db.getGroupMembers(gid);
+    const groupInfo = await db.queryOne('SELECT name FROM groups_ WHERE id = $1', [gid]);
+    const groupName = groupInfo ? groupInfo.name : 'Groupe';
     const senderName2 = user ? user.full_name : socket.user.username;
     for (const member of groupMembers) {
       if (member.id !== userId) {
         await sendPushToUser(member.id, {
-          title: `${senderName2} (${data.groupName || 'Groupe'})`,
+          title: `${senderName2} (${groupName})`,
           body: content || (type === 'voice' ? 'Message vocal' : type === 'image' ? 'Photo' : type === 'video' ? 'Vidéo' : fileName || 'Fichier'),
           tag: `group-${gid}`
         });
