@@ -1,10 +1,11 @@
 {
   "name": "heretochat",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "build": "cd client && npm install && npx vite build",
-    "install-server": "cd server && npm install",
-    "start": "cd server && node index.js",
-    "postinstall": "npm run install-server && npm run build"
+    "build": "cd server && npm install && cd ../client && npm install && npx vite build",
+    "start": "cd server && node index.js"
   }
 }
