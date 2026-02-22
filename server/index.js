@@ -16,6 +16,16 @@ webpush.setVapidDetails('mailto:heretochat@example.com', VAPID_PUBLIC, VAPID_PRI
 
 // Push subscriptions stored in database (see db.js)
 
+// Normalize phone numbers: remove spaces, dashes, dots, handle +33/0
+function normalizePhone(p) {
+  let n = p.replace(/[\s\-\.\(\)]/g, '');
+  // Convert +33 to 0 (French numbers)
+  if (n.startsWith('+33')) n = '0' + n.slice(3);
+  // Convert 0033 to 0
+  if (n.startsWith('0033')) n = '0' + n.slice(4);
+  return n;
+}
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -79,6 +89,14 @@ app.post('/api/login', (req, res) => {
   let user = null;
   if (phone) {
     user = db.getUserByPhone(phone.trim());
+    if (!user) user = db.getUserByPhone(normalizePhone(phone.trim()));
+    if (!user) {
+      // Also try normalized match against all users
+      const all = db.getAllUsers(0);
+      const norm = normalizePhone(phone.trim());
+      const found = all.find(u => normalizePhone(u.phone || '') === norm);
+      if (found) user = { username: found.username };
+    }
     if (!user) {
       // Also try as username
       user = db.getUserByUsername(phone.trim());
@@ -110,7 +128,15 @@ app.post('/api/contacts/add', authMiddleware, (req, res) => {
   if (!phone) {
     return res.status(400).json({ error: 'Numéro de téléphone requis' });
   }
-  const contact = db.getUserByPhone(phone.trim());
+  const normalized = normalizePhone(phone.trim());
+  // Try exact match first, then normalized match
+  let contact = db.getUserByPhone(phone.trim());
+  if (!contact) contact = db.getUserByPhone(normalized);
+  // Also search all users for normalized match
+  if (!contact) {
+    const all = db.getAllUsers(0);
+    contact = all.find(u => normalizePhone(u.phone || '') === normalized);
+  }
   if (!contact) {
     return res.status(404).json({ error: 'Aucun utilisateur avec ce numéro' });
   }
