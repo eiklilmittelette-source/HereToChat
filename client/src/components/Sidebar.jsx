@@ -48,8 +48,17 @@ function AddContactModal({ onClose, onAdd, currentUser }) {
   }
 
   async function handleImportContacts() {
-    if (!('contacts' in navigator)) {
-      setError('L\'import de contacts n\'est disponible que sur téléphone (Android/Chrome)');
+    if (!('contacts' in navigator && 'ContactsManager' in window)) {
+      // Contact Picker API not supported (iPhone, desktop, etc.)
+      // Fall back to invite link
+      const inviteUrl = `${window.location.origin}?invite=${currentUser?.id || ''}`;
+      const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`;
+      if (navigator.share) {
+        navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {});
+      } else {
+        try { await navigator.clipboard.writeText(text); setImportStatus('Lien d\'invitation copié !'); }
+        catch { setError('Partage le lien : ' + inviteUrl); }
+      }
       return;
     }
     try {
@@ -173,7 +182,7 @@ function AddContactModal({ onClose, onAdd, currentUser }) {
               onClick={handleImportContacts}
               style={{ width: '100%', marginTop: 8, padding: '12px', background: 'linear-gradient(135deg, #2ecc71, #27ae60)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
             >
-              📱 Importer tous les contacts
+              📱 {('contacts' in navigator && 'ContactsManager' in window) ? 'Importer tous les contacts' : 'Inviter des amis'}
             </button>
           </>
         )}
