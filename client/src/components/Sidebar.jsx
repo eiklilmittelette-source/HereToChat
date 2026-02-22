@@ -244,16 +244,17 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
               <span>{(name || '?')[0].toUpperCase()}</span>
             </div>
           )}
-          <input
-            id="profile-pic-input"
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={handlePicSelect}
-            style={{ position: 'absolute', opacity: 0, width: '100%', height: '100%', top: 0, left: 0, cursor: 'pointer', zIndex: 10 }}
-          />
           <div className="settings-avatar-overlay">Changer la photo</div>
         </div>
+        <label style={{ display: 'block', textAlign: 'center', marginBottom: 16, padding: '10px 20px', background: 'linear-gradient(135deg, #3498db, #2980b9)', color: '#fff', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+          Choisir une photo
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handlePicSelect}
+            style={{ display: 'none' }}
+          />
+        </label>
         <form className="settings-form" onSubmit={handleSave}>
           <div className="settings-field">
             <label>Nom</label>
