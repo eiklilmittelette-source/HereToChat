@@ -17,7 +17,13 @@
   <script type="module" src="/src/main.jsx"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
+      window.addEventListener('load', async () => {
+        // Force unregister old service workers and clear all caches
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const reg of regs) { await reg.unregister(); }
+        const keys = await caches.keys();
+        for (const k of keys) { await caches.delete(k); }
+        // Re-register fresh
         navigator.serviceWorker.register('/sw.js').catch(() => {});
       });
     }

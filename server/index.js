@@ -659,9 +659,13 @@ io.on('connection', (socket) => {
 // Serve built frontend
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(clientDist)) {
+  // No cache for sw.js, manifest.json, and index.html
+  app.get('/sw.js', (req, res) => { res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); res.sendFile(path.join(clientDist, 'sw.js')); });
+  app.get('/manifest.json', (req, res) => { res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); res.sendFile(path.join(clientDist, 'manifest.json')); });
   app.use(express.static(clientDist));
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.join(clientDist, 'index.html'));
     }
   });
