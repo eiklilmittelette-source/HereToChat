@@ -658,7 +658,13 @@ body {
 
 .chat-header-status {
   font-size: 13px;
+  color: #888;
+}
+.chat-header-status.online {
   color: #2ecc71;
+}
+.chat-header-status.offline {
+  color: #888;
 }
 
 /* ===== MESSAGES ===== */

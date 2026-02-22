@@ -47,6 +47,7 @@ async function initDb() {
   try { db.run(`ALTER TABLE messages ADD COLUMN file_url TEXT NOT NULL DEFAULT ''`); } catch(e) {}
   try { db.run(`ALTER TABLE messages ADD COLUMN file_name TEXT NOT NULL DEFAULT ''`); } catch(e) {}
   try { db.run(`ALTER TABLE messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`); } catch(e) {}
+  try { db.run(`ALTER TABLE messages ADD COLUMN reply_to INTEGER DEFAULT NULL`); } catch(e) {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS contacts (
@@ -102,6 +103,7 @@ async function initDb() {
   `);
 
   try { db.run(`ALTER TABLE group_messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`); } catch(e) {}
+  try { db.run(`ALTER TABLE group_messages ADD COLUMN reply_to INTEGER DEFAULT NULL`); } catch(e) {}
 
   // Reactions table
   db.run(`
@@ -175,9 +177,9 @@ function getAllUsers(excludeId) {
   return users;
 }
 
-function saveMessage(senderId, receiverId, content, type, fileUrl, fileName) {
-  db.run('INSERT INTO messages (sender_id, receiver_id, content, type, file_url, file_name) VALUES (?, ?, ?, ?, ?, ?)',
-    [senderId, receiverId, content || '', type || 'text', fileUrl || '', fileName || '']);
+function saveMessage(senderId, receiverId, content, type, fileUrl, fileName, replyTo) {
+  db.run('INSERT INTO messages (sender_id, receiver_id, content, type, file_url, file_name, reply_to) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [senderId, receiverId, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null]);
   const result = db.exec('SELECT last_insert_rowid() as id');
   save();
   return { lastInsertRowid: result[0].values[0][0] };
@@ -369,9 +371,9 @@ function removeGroupAdmin(groupId, userId) {
   save();
 }
 
-function saveGroupMessage(groupId, senderId, content, type, fileUrl, fileName) {
-  db.run('INSERT INTO group_messages (group_id, sender_id, content, type, file_url, file_name) VALUES (?, ?, ?, ?, ?, ?)',
-    [groupId, senderId, content || '', type || 'text', fileUrl || '', fileName || '']);
+function saveGroupMessage(groupId, senderId, content, type, fileUrl, fileName, replyTo) {
+  db.run('INSERT INTO group_messages (group_id, sender_id, content, type, file_url, file_name, reply_to) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [groupId, senderId, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null]);
   const result = db.exec('SELECT last_insert_rowid() as id');
   save();
   return { lastInsertRowid: result[0].values[0][0] };

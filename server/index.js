@@ -50,6 +50,13 @@ app.post('/api/register', (req, res) => {
   if (username.length < 2 || password.length < 4) {
     return res.status(400).json({ error: 'Nom min 2 caractères, mot de passe min 4' });
   }
+  // Validate phone number
+  if (phone) {
+    const cleaned = phone.trim().replace(/[\s\-\.\(\)]/g, '');
+    if (!/^(\+?\d{10,15}|0\d{9})$/.test(cleaned)) {
+      return res.status(400).json({ error: 'Numéro de téléphone invalide' });
+    }
+  }
   const existing = db.getUserByUsername(username);
   if (existing) {
     return res.status(409).json({ error: 'Ce username existe déjà' });
@@ -398,10 +405,10 @@ app.post('/api/groups/:groupId/delete', authMiddleware, (req, res) => {
   const groupId = parseInt(req.params.groupId);
   if (!db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
   const d = db.getDb();
+  d.run('DELETE FROM reactions WHERE message_type = ? AND message_id IN (SELECT id FROM group_messages WHERE group_id = ?)', ['group', groupId]);
   d.run('DELETE FROM group_members WHERE group_id = ?', [groupId]);
   d.run('DELETE FROM group_messages WHERE group_id = ?', [groupId]);
   d.run('DELETE FROM groups_ WHERE id = ?', [groupId]);
-  d.run('DELETE FROM reactions WHERE message_type = ? AND message_id IN (SELECT id FROM group_messages WHERE group_id = ?)', ['group', groupId]);
   const data = d.export();
   fs.writeFileSync(path.join(__dirname, 'chat.db'), Buffer.from(data));
   res.json({ ok: true });
@@ -497,14 +504,14 @@ io.on('connection', (socket) => {
   }
 
   socket.on('send-message', (data) => {
-    const { receiverId, content, type, fileUrl, fileName } = data;
+    const { receiverId, content, type, fileUrl, fileName, replyTo } = data;
     if ((!content && !fileUrl) || !receiverId) return;
 
     const rid = Number(receiverId);
     // Auto-add contact both ways if not already contacts
     db.addContact(userId, rid, '');
     db.addContact(rid, userId, '');
-    const result = db.saveMessage(userId, rid, content || '', type || 'text', fileUrl || '', fileName || '');
+    const result = db.saveMessage(userId, rid, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null);
     const message = {
       id: Number(result.lastInsertRowid),
       sender_id: userId,
@@ -513,6 +520,7 @@ io.on('connection', (socket) => {
       type: type || 'text',
       file_url: fileUrl || '',
       file_name: fileName || '',
+      reply_to: replyTo || null,
       sender_name: socket.user.username,
       timestamp: new Date().toISOString()
     };
@@ -548,7 +556,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('stop-typing', (receiverId) => {
-    const receiverSocket = onlineUsers.get(receiverId);
+    const receiverSocket = onlineUsers.get(Number(receiverId));
     if (receiverSocket) {
       io.to(receiverSocket).emit('user-stop-typing', userId);
     }
@@ -556,12 +564,12 @@ io.on('connection', (socket) => {
 
   // Group message
   socket.on('send-group-message', (data) => {
-    const { groupId, content, type, fileUrl, fileName } = data;
+    const { groupId, content, type, fileUrl, fileName, replyTo } = data;
     if ((!content && !fileUrl) || !groupId) return;
     const gid = Number(groupId);
     if (!db.isGroupMember(gid, userId)) return;
 
-    const result = db.saveGroupMessage(gid, userId, content || '', type || 'text', fileUrl || '', fileName || '');
+    const result = db.saveGroupMessage(gid, userId, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null);
     const user = db.getUserById(userId);
     const message = {
       id: Number(result.lastInsertRowid),
@@ -571,6 +579,7 @@ io.on('connection', (socket) => {
       type: type || 'text',
       file_url: fileUrl || '',
       file_name: fileName || '',
+      reply_to: replyTo || null,
       sender_name: user ? user.username : socket.user.username,
       sender_full_name: user ? user.full_name : '',
       sender_pic: user ? user.profile_pic : '',

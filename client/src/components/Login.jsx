@@ -28,6 +28,8 @@ export default function Login({ onLogin }) {
       if (isRegister) {
         if (!fullName.trim()) { setError('Nom requis'); setLoading(false); return; }
         if (!phone.trim()) { setError('Numéro requis'); setLoading(false); return; }
+        const cleaned = phone.trim().replace(/[\s\-\.\(\)]/g, '');
+        if (!/^(\+?\d{10,15}|0\d{9})$/.test(cleaned)) { setError('Numéro de téléphone invalide'); setLoading(false); return; }
         const res = await fetch(apiUrl('/api/register'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
