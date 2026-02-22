@@ -1,17 +1,20 @@
-const CACHE_NAME = 'heretochat-v3';
+const CACHE_NAME = 'heretochat-v4';
 
 self.addEventListener('install', () => self.skipWaiting());
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((names) => Promise.all(
-      names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))
+      names.map((n) => caches.delete(n))
     )).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (event) => {
-  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+  // Always fetch from network first, never serve stale cache
+  event.respondWith(
+    fetch(event.request).catch(() => caches.match(event.request))
+  );
 });
 
 // Push notification handler
@@ -23,8 +26,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body || 'Nouveau message',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: '/dragon-logo.svg',
+    badge: '/dragon-logo.svg',
     vibrate: [200, 100, 200],
     tag: data.tag || 'message',
     renotify: true,
