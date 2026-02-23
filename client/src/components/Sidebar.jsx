@@ -587,7 +587,7 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
           onClick={handleSidebarImport}
           style={{ margin: '12px 16px', padding: '12px', background: 'linear-gradient(135deg, #2ecc71, #27ae60)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', width: 'calc(100% - 32px)' }}
         >
-          {importLoading ? '...' : hasContactsApi ? '📱 Importer tous les contacts' : '📩 Inviter des amis'}
+          {importLoading ? '...' : '📱 Importer tous les contacts'}
         </button>
       </div>
       {showAddModal && (
