@@ -121,6 +121,7 @@ export default function App() {
   const [incomingCall, setIncomingCall] = useState(null);
   const [outgoingCall, setOutgoingCall] = useState(null);
   const [callToast, setCallToast] = useState(null);
+  const [socketConnected, setSocketConnected] = useState(false);
   const outgoingCallRef = useRef(null);
   const selectedUserRef = useRef(null);
   const selectedGroupRef = useRef(null);
@@ -204,6 +205,14 @@ export default function App() {
   useEffect(() => {
     if (!token) return;
     const socket = connectSocket(token);
+
+    socket.on('connect', () => setSocketConnected(true));
+    socket.on('disconnect', () => setSocketConnected(false));
+
+    socket.on('message-error', (data) => {
+      setCallToast(data.error || 'Erreur envoi message');
+      setTimeout(() => setCallToast(null), 3000);
+    });
 
     socket.on('online-users', (ids) => setOnlineUsers(ids));
 
@@ -404,14 +413,22 @@ export default function App() {
 
   function handleSend(content, reply) {
     const socket = getSocket();
-    if (!socket) return;
+    if (!socket || !socket.connected) {
+      setCallToast('Pas connecté au serveur');
+      setTimeout(() => setCallToast(null), 3000);
+      return;
+    }
     if (selectedGroup) socket.emit('send-group-message', { groupId: selectedGroup.id, content, replyTo: reply?.id || null });
     else if (selectedUser) socket.emit('send-message', { receiverId: selectedUser.id, content, replyTo: reply?.id || null });
   }
 
   function handleSendFile(type, fileUrl, fileName) {
     const socket = getSocket();
-    if (!socket) return;
+    if (!socket || !socket.connected) {
+      setCallToast('Pas connecté au serveur');
+      setTimeout(() => setCallToast(null), 3000);
+      return;
+    }
     if (selectedGroup) socket.emit('send-group-message', { groupId: selectedGroup.id, content: '', type, fileUrl, fileName });
     else if (selectedUser) socket.emit('send-message', { receiverId: selectedUser.id, content: '', type, fileUrl, fileName });
   }
@@ -536,6 +553,11 @@ export default function App() {
 
   return (
     <div className="app">
+      {!socketConnected && token && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999, background: '#e74c3c', color: '#fff', textAlign: 'center', padding: '6px 12px', fontSize: 13, fontWeight: 600 }}>
+          Connexion au serveur... Patiente quelques secondes
+        </div>
+      )}
       <Sidebar
         className={isMobile && hasSelection ? 'hidden-mobile' : ''}
         users={users} groups={groups} onlineUsers={onlineUsers}
