@@ -203,13 +203,27 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
   function handlePicSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { alert('Photo trop grande (max 2 Mo)'); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setPicPreview(reader.result);
-      setPicBase64(reader.result);
+    // Compress image to max 400x400 for profile pic
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const maxSize = 400;
+      let w = img.width, h = img.height;
+      if (w > maxSize || h > maxSize) {
+        if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+        else { w = Math.round(w * maxSize / h); h = maxSize; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const compressed = canvas.toDataURL('image/jpeg', 0.8);
+      setPicPreview(compressed);
+      setPicBase64(compressed);
+      URL.revokeObjectURL(url);
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => { URL.revokeObjectURL(url); };
+    img.src = url;
   }
 
   async function handleSave(e) {
@@ -221,8 +235,9 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
       setSuccess('Profil mis à jour !');
       setPicBase64('');
       setTimeout(() => onClose(), 800);
-    } catch {
-      setSuccess('Erreur');
+    } catch (err) {
+      console.error('Profile update error:', err);
+      setSuccess('Erreur : ' + (err.message || 'inconnue'));
     } finally {
       setLoading(false);
     }
@@ -253,6 +268,7 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
             ref={picRef}
             type="file"
             accept="image/*"
+            capture="environment"
             onChange={handlePicSelect}
             style={{ display: 'none' }}
           />
@@ -436,13 +452,8 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
 
   async function handleSidebarImport() {
     if (!hasContactsApi) {
-      const inviteUrl = `${window.location.origin}?invite=${currentUser.id}`;
-      const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`;
-      if (navigator.share) {
-        navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {});
-      } else {
-        navigator.clipboard.writeText(text).then(() => setImportStatus('Lien copié !')).catch(() => {});
-      }
+      setImportStatus('Disponible uniquement sur Android Chrome. Utilise le bouton 📩 pour inviter.');
+      setTimeout(() => setImportStatus(''), 4000);
       return;
     }
     try {
@@ -567,7 +578,7 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
           onClick={handleSidebarImport}
           style={{ margin: '12px 16px', padding: '12px', background: 'linear-gradient(135deg, #2ecc71, #27ae60)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', width: 'calc(100% - 32px)' }}
         >
-          {importLoading ? '...' : hasContactsApi ? '📱 Importer tous les contacts' : '📩 Inviter des amis'}
+          {importLoading ? '...' : '📱 Importer tous les contacts'}
         </button>
       </div>
       {showAddModal && (

@@ -9,11 +9,11 @@
     </linearGradient>
   </defs>
   <!-- Cercle de fond multicouleur -->
-  <circle cx="100" cy="100" r="96" fill="url(#bgGrad)"/>
+  <circle cx="100" cy="100" r="96" fill="url(#bgGrad)" stroke="white" stroke-width="6"/>
   <!-- Bulle de chat centrée (décalée vers le bas) -->
-  <path d="M55,50 L145,50 C155,50 163,58 163,68 L163,115 C163,125 155,133 145,133 L90,133 L75,158 L78,133 L55,133 C45,133 37,125 37,115 L37,68 C37,58 45,50 55,50 Z" fill="url(#bgGrad)" stroke="white" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M55,50 L145,50 C155,50 163,58 163,68 L163,115 C163,125 155,133 145,133 L90,133 L75,158 L78,133 L55,133 C45,133 37,125 37,115 L37,68 C37,58 45,50 55,50 Z" fill="url(#bgGrad)" stroke="white" stroke-width="6" stroke-linejoin="round"/>
   <!-- Trois points ... centrés dans la bulle -->
-  <circle cx="77" cy="92" r="8" fill="white"/>
-  <circle cx="100" cy="92" r="8" fill="white"/>
-  <circle cx="123" cy="92" r="8" fill="white"/>
+  <circle cx="77" cy="92" r="10" fill="white"/>
+  <circle cx="100" cy="92" r="10" fill="white"/>
+  <circle cx="123" cy="92" r="10" fill="white"/>
 </svg>
