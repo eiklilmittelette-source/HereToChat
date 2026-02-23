@@ -43,92 +43,100 @@ app.use('/uploads', express.static(uploadsDir));
 // --- REST API ---
 
 app.post('/api/register', async (req, res) => {
-  const { username, password, fullName, phone, profilePic, invitedBy } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Nom et mot de passe requis' });
-  }
-  if (username.length < 2 || password.length < 4) {
-    return res.status(400).json({ error: 'Nom min 2 caractères, mot de passe min 4' });
-  }
-  // Validate phone number
-  if (phone) {
-    const cleaned = phone.trim().replace(/[\s\-\.\(\)]/g, '');
-    if (!/^\+?\d{6,15}$/.test(cleaned)) {
-      return res.status(400).json({ error: 'Numéro de téléphone invalide' });
+  try {
+    const { username, password, fullName, phone, profilePic, invitedBy } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Nom et mot de passe requis' });
     }
-  }
-  const existing = await db.getUserByUsername(username);
-  if (existing) {
-    return res.status(409).json({ error: 'Ce username existe déjà' });
-  }
+    if (username.length < 2 || password.length < 4) {
+      return res.status(400).json({ error: 'Nom min 2 caractères, mot de passe min 4' });
+    }
+    // Validate phone number
+    if (phone) {
+      const cleaned = phone.trim().replace(/[\s\-\.\(\)]/g, '');
+      if (!/^\+?\d{6,15}$/.test(cleaned)) {
+        return res.status(400).json({ error: 'Numéro de téléphone invalide' });
+      }
+    }
+    const existing = await db.getUserByUsername(username);
+    if (existing) {
+      return res.status(409).json({ error: 'Ce username existe déjà' });
+    }
 
-  // Save profile pic if provided (base64)
-  let picPath = '';
-  if (profilePic) {
-    const matches = profilePic.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (matches) {
-      const ext = matches[1];
-      const data = Buffer.from(matches[2], 'base64');
-      const filename = `${Date.now()}-${username}.${ext}`;
-      fs.writeFileSync(path.join(uploadsDir, filename), data);
-      picPath = `/uploads/${filename}`;
+    // Save profile pic if provided (base64)
+    let picPath = '';
+    if (profilePic) {
+      const matches = profilePic.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (matches) {
+        const ext = matches[1];
+        const data = Buffer.from(matches[2], 'base64');
+        const filename = `${Date.now()}-${username}.${ext}`;
+        fs.writeFileSync(path.join(uploadsDir, filename), data);
+        picPath = `/uploads/${filename}`;
+      }
     }
-  }
 
-  const hash = bcrypt.hashSync(password, 10);
-  const normalizedPhone = phone ? normalizePhone(phone.trim()) : '';
-  const result = await db.createUser(username, hash, fullName || username, normalizedPhone, picPath);
-  const user = { id: result.lastInsertRowid, username, full_name: fullName || username, phone: normalizedPhone, profile_pic: picPath };
-  // Auto-add inviter as contact
-  if (invitedBy) {
-    const inviterId = Number(invitedBy);
-    if (inviterId && inviterId !== user.id) {
-      await db.addContact(user.id, inviterId, '');
-      await db.addContact(inviterId, user.id, '');
+    const hash = bcrypt.hashSync(password, 10);
+    const normalizedPhone = phone ? normalizePhone(phone.trim()) : '';
+    const result = await db.createUser(username, hash, fullName || username, normalizedPhone, picPath);
+    const user = { id: result.lastInsertRowid, username, full_name: fullName || username, phone: normalizedPhone, profile_pic: picPath };
+    // Auto-add inviter as contact
+    if (invitedBy) {
+      const inviterId = Number(invitedBy);
+      if (inviterId && inviterId !== user.id) {
+        await db.addContact(user.id, inviterId, '');
+        await db.addContact(inviterId, user.id, '');
+      }
     }
+    const token = generateToken({ id: user.id, username });
+    res.json({ user, token });
+  } catch (err) {
+    console.error('[register] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
-  const token = generateToken({ id: user.id, username });
-  res.json({ user, token });
 });
 
 app.post('/api/login', async (req, res) => {
-  const { username, password, phone } = req.body;
-  // Support login by phone or username
-  let user = null;
-  if (phone) {
-    user = await db.getUserByPhone(phone.trim());
-    if (!user) user = await db.getUserByPhone(normalizePhone(phone.trim()));
-    if (!user) {
-      // Also try normalized match against all users
-      const all = await db.getAllUsers(0);
-      const norm = normalizePhone(phone.trim());
-      const found = all.find(u => normalizePhone(u.phone || '') === norm);
-      if (found) user = found;
+  try {
+    const { username, password, phone } = req.body;
+    // Support login by phone or username
+    let user = null;
+    if (phone) {
+      user = await db.getUserByPhone(phone.trim());
+      if (!user) user = await db.getUserByPhone(normalizePhone(phone.trim()));
+      if (!user) {
+        const all = await db.getAllUsers(0);
+        const norm = normalizePhone(phone.trim());
+        const found = all.find(u => normalizePhone(u.phone || '') === norm);
+        if (found) user = found;
+      }
+      if (!user) user = await db.getUserByUsername(phone.trim());
+      if (user) user = await db.getUserByUsername(user.username);
+    } else if (username) {
+      user = await db.getUserByUsername(username);
     }
-    if (!user) {
-      // Also try as username
-      user = await db.getUserByUsername(phone.trim());
+    if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+      return res.status(401).json({ error: 'Numéro ou mot de passe incorrect' });
     }
-    // getUserByPhone doesn't return password_hash, re-fetch full user
-    if (user) {
-      user = await db.getUserByUsername(user.username);
-    }
-  } else if (username) {
-    user = await db.getUserByUsername(username);
+    const token = generateToken({ id: user.id, username: user.username });
+    res.json({
+      user: { id: user.id, username: user.username, full_name: user.full_name, phone: user.phone, profile_pic: user.profile_pic },
+      token
+    });
+  } catch (err) {
+    console.error('[login] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-    return res.status(401).json({ error: 'Numéro ou mot de passe incorrect' });
-  }
-  const token = generateToken({ id: user.id, username: user.username });
-  res.json({
-    user: { id: user.id, username: user.username, full_name: user.full_name, phone: user.phone, profile_pic: user.profile_pic },
-    token
-  });
 });
 
 app.get('/api/users', authMiddleware, async (req, res) => {
-  const contacts = await db.getContacts(req.user.id);
-  res.json(contacts);
+  try {
+    const contacts = await db.getContacts(req.user.id);
+    res.json(contacts);
+  } catch (err) {
+    console.error('[users] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 app.post('/api/contacts/add', authMiddleware, async (req, res) => {
@@ -163,270 +171,364 @@ app.post('/api/contacts/add', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/profile-pic', authMiddleware, async (req, res) => {
-  const { profilePic } = req.body;
-  if (!profilePic) {
-    return res.status(400).json({ error: 'Photo requise' });
+  try {
+    const { profilePic } = req.body;
+    if (!profilePic) return res.status(400).json({ error: 'Photo requise' });
+    const matches = profilePic.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!matches) return res.status(400).json({ error: 'Format image invalide' });
+    const ext = matches[1];
+    const data = Buffer.from(matches[2], 'base64');
+    const filename = `${Date.now()}-${req.user.id}.${ext}`;
+    fs.writeFileSync(path.join(uploadsDir, filename), data);
+    const picPath = `/uploads/${filename}`;
+    await db.updateUserProfile(req.user.id, null, null, picPath);
+    res.json({ profile_pic: picPath });
+  } catch (err) {
+    console.error('[profile-pic] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
-  const matches = profilePic.match(/^data:image\/(\w+);base64,(.+)$/);
-  if (!matches) {
-    return res.status(400).json({ error: 'Format image invalide' });
-  }
-  const ext = matches[1];
-  const data = Buffer.from(matches[2], 'base64');
-  const filename = `${Date.now()}-${req.user.id}.${ext}`;
-  fs.writeFileSync(path.join(uploadsDir, filename), data);
-  const picPath = `/uploads/${filename}`;
-  await db.updateUserProfile(req.user.id, null, null, picPath);
-  res.json({ profile_pic: picPath });
 });
 
 // Rename a contact
 app.post('/api/contacts/rename', authMiddleware, async (req, res) => {
-  const { contactId, nickname } = req.body;
-  if (!contactId) return res.status(400).json({ error: 'Contact requis' });
-  await db.renameContact(req.user.id, Number(contactId), nickname || '');
-  res.json({ ok: true });
+  try {
+    const { contactId, nickname } = req.body;
+    if (!contactId) return res.status(400).json({ error: 'Contact requis' });
+    await db.renameContact(req.user.id, Number(contactId), nickname || '');
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[contacts/rename] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 // Update profile (name and/or pic)
 app.post('/api/profile', authMiddleware, async (req, res) => {
-  const { fullName, profilePic } = req.body;
-  const user = await db.getUserById(req.user.id);
-  if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
+  try {
+    const { fullName, profilePic } = req.body;
+    const user = await db.getUserById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
 
-  let picPath = user.profile_pic;
-  if (profilePic) {
-    const matches = profilePic.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (matches) {
-      const ext = matches[1];
-      const data = Buffer.from(matches[2], 'base64');
-      const filename = `${Date.now()}-${req.user.id}.${ext}`;
-      fs.writeFileSync(path.join(uploadsDir, filename), data);
-      picPath = `/uploads/${filename}`;
+    let picPath = user.profile_pic;
+    if (profilePic) {
+      const matches = profilePic.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (matches) {
+        const ext = matches[1];
+        const data = Buffer.from(matches[2], 'base64');
+        const filename = `${Date.now()}-${req.user.id}.${ext}`;
+        fs.writeFileSync(path.join(uploadsDir, filename), data);
+        picPath = `/uploads/${filename}`;
+      }
     }
-  }
 
-  const newName = fullName && fullName.trim() ? fullName.trim() : user.full_name;
-  await db.updateUserProfile(req.user.id, newName, user.phone, picPath);
-  res.json({ full_name: newName, profile_pic: picPath });
+    const newName = fullName && fullName.trim() ? fullName.trim() : user.full_name;
+    await db.updateUserProfile(req.user.id, newName, user.phone, picPath);
+    res.json({ full_name: newName, profile_pic: picPath });
+  } catch (err) {
+    console.error('[profile] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 // Upload file (voice, image, document)
 app.post('/api/upload', authMiddleware, (req, res) => {
-  const { fileData, fileName, fileType } = req.body;
-  if (!fileData) return res.status(400).json({ error: 'Fichier requis' });
+  try {
+    const { fileData, fileName, fileType } = req.body;
+    if (!fileData) return res.status(400).json({ error: 'Fichier requis' });
 
-  let ext = 'bin';
-  let folder = 'files';
-  // Support complex MIME types like "audio/webm;codecs=opus"
-  const dataMatch = fileData.match(/^data:([^;,]+(?:;[^;,]+)*);base64,(.+)$/);
-  if (dataMatch) {
-    const fullMime = dataMatch[1];
-    const mime = fullMime.split(';')[0]; // Get base MIME without codecs
-    const data = Buffer.from(dataMatch[2], 'base64');
-    if (mime.startsWith('audio/')) {
-      ext = mime.includes('webm') ? 'webm' : mime.includes('mp4') ? 'm4a' : mime.includes('aac') ? 'm4a' : mime.includes('ogg') ? 'ogg' : mime.includes('mpeg') ? 'mp3' : 'webm';
-      folder = 'voice';
-    } else if (mime.startsWith('image/')) {
-      ext = mime.split('/')[1].replace('jpeg', 'jpg');
-      folder = 'images';
-    } else if (mime.startsWith('video/')) {
-      ext = mime.includes('mp4') ? 'mp4' : mime.includes('webm') ? 'webm' : mime.includes('quicktime') ? 'mov' : fileName ? fileName.split('.').pop() : 'mp4';
-      folder = 'videos';
+    let ext = 'bin';
+    let folder = 'files';
+    const dataMatch = fileData.match(/^data:([^;,]+(?:;[^;,]+)*);base64,(.+)$/);
+    if (dataMatch) {
+      const fullMime = dataMatch[1];
+      const mime = fullMime.split(';')[0];
+      const data = Buffer.from(dataMatch[2], 'base64');
+      if (mime.startsWith('audio/')) {
+        ext = mime.includes('webm') ? 'webm' : mime.includes('mp4') ? 'm4a' : mime.includes('aac') ? 'm4a' : mime.includes('ogg') ? 'ogg' : mime.includes('mpeg') ? 'mp3' : 'webm';
+        folder = 'voice';
+      } else if (mime.startsWith('image/')) {
+        ext = mime.split('/')[1].replace('jpeg', 'jpg');
+        folder = 'images';
+      } else if (mime.startsWith('video/')) {
+        ext = mime.includes('mp4') ? 'mp4' : mime.includes('webm') ? 'webm' : mime.includes('quicktime') ? 'mov' : fileName ? fileName.split('.').pop() : 'mp4';
+        folder = 'videos';
+      } else {
+        ext = fileName ? fileName.split('.').pop() : 'bin';
+        folder = 'files';
+      }
+      const subDir = path.join(uploadsDir, folder);
+      if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+      const storedName = `${Date.now()}-${req.user.id}.${ext}`;
+      fs.writeFileSync(path.join(subDir, storedName), data);
+      const fileUrl = `/uploads/${folder}/${storedName}`;
+      res.json({ fileUrl, fileName: fileName || storedName });
     } else {
-      ext = fileName ? fileName.split('.').pop() : 'bin';
-      folder = 'files';
+      res.status(400).json({ error: 'Format invalide' });
     }
-    const subDir = path.join(uploadsDir, folder);
-    if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
-    const storedName = `${Date.now()}-${req.user.id}.${ext}`;
-    fs.writeFileSync(path.join(subDir, storedName), data);
-    const fileUrl = `/uploads/${folder}/${storedName}`;
-    res.json({ fileUrl, fileName: fileName || storedName });
-  } else {
-    res.status(400).json({ error: 'Format invalide' });
+  } catch (err) {
+    console.error('[upload] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
 
 app.get('/api/messages/:userId', authMiddleware, async (req, res) => {
-  const messages = await db.getMessages(req.user.id, parseInt(req.params.userId));
-  // Attach reactions
-  const ids = messages.map(m => m.id);
-  const reactionsMap = await db.getReactionsForMessages(ids, 'dm');
-  messages.forEach(m => { m.reactions = reactionsMap[m.id] || []; });
-  res.json(messages);
+  try {
+    const messages = await db.getMessages(req.user.id, parseInt(req.params.userId));
+    const ids = messages.map(m => m.id);
+    const reactionsMap = await db.getReactionsForMessages(ids, 'dm');
+    messages.forEach(m => { m.reactions = reactionsMap[m.id] || []; });
+    res.json(messages);
+  } catch (err) {
+    console.error('[messages] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Delete a DM message (soft delete)
 app.post('/api/messages/delete', authMiddleware, async (req, res) => {
-  const { messageId } = req.body;
-  if (!messageId) return res.status(400).json({ error: 'ID message requis' });
-  await db.deleteMessage(Number(messageId), req.user.id);
-  res.json({ ok: true, messageId: Number(messageId) });
+  try {
+    const { messageId } = req.body;
+    if (!messageId) return res.status(400).json({ error: 'ID message requis' });
+    await db.deleteMessage(Number(messageId), req.user.id);
+    res.json({ ok: true, messageId: Number(messageId) });
+  } catch (err) {
+    console.error('[messages/delete] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Delete a group message (soft delete)
 app.post('/api/groups/messages/delete', authMiddleware, async (req, res) => {
-  const { messageId } = req.body;
-  if (!messageId) return res.status(400).json({ error: 'ID message requis' });
-  await db.deleteGroupMessage(Number(messageId), req.user.id);
-  res.json({ ok: true, messageId: Number(messageId) });
+  try {
+    const { messageId } = req.body;
+    if (!messageId) return res.status(400).json({ error: 'ID message requis' });
+    await db.deleteGroupMessage(Number(messageId), req.user.id);
+    res.json({ ok: true, messageId: Number(messageId) });
+  } catch (err) {
+    console.error('[groups/messages/delete] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Add reaction
 app.post('/api/reactions/add', authMiddleware, async (req, res) => {
-  const { messageId, messageType, emoji } = req.body;
-  if (!messageId || !emoji) return res.status(400).json({ error: 'Données manquantes' });
-  await db.addReaction(Number(messageId), messageType || 'dm', req.user.id, emoji);
-  res.json({ ok: true });
+  try {
+    const { messageId, messageType, emoji } = req.body;
+    if (!messageId || !emoji) return res.status(400).json({ error: 'Données manquantes' });
+    await db.addReaction(Number(messageId), messageType || 'dm', req.user.id, emoji);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[reactions/add] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Remove reaction
 app.post('/api/reactions/remove', authMiddleware, async (req, res) => {
-  const { messageId, messageType, emoji } = req.body;
-  if (!messageId || !emoji) return res.status(400).json({ error: 'Données manquantes' });
-  await db.removeReaction(Number(messageId), messageType || 'dm', req.user.id, emoji);
-  res.json({ ok: true });
+  try {
+    const { messageId, messageType, emoji } = req.body;
+    if (!messageId || !emoji) return res.status(400).json({ error: 'Données manquantes' });
+    await db.removeReaction(Number(messageId), messageType || 'dm', req.user.id, emoji);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[reactions/remove] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 // === GROUP ROUTES ===
 
 app.post('/api/groups/create', authMiddleware, async (req, res) => {
-  const { name, memberIds, pic } = req.body;
-  if (!name || !name.trim()) return res.status(400).json({ error: 'Nom du groupe requis' });
-  if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) return res.status(400).json({ error: 'Ajoute au moins 1 membre' });
-  // Save group pic if provided
-  let picPath = '';
-  if (pic) {
-    const matches = pic.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (matches) {
-      const ext = matches[1];
-      const data = Buffer.from(matches[2], 'base64');
-      const subDir = path.join(uploadsDir, 'groups');
-      if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
-      const filename = `group-${Date.now()}.${ext}`;
-      fs.writeFileSync(path.join(subDir, filename), data);
-      picPath = `/uploads/groups/${filename}`;
+  try {
+    const { name, memberIds, pic } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Nom du groupe requis' });
+    if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) return res.status(400).json({ error: 'Ajoute au moins 1 membre' });
+    let picPath = '';
+    if (pic) {
+      const matches = pic.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (matches) {
+        const ext = matches[1];
+        const data = Buffer.from(matches[2], 'base64');
+        const subDir = path.join(uploadsDir, 'groups');
+        if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+        const filename = `group-${Date.now()}.${ext}`;
+        fs.writeFileSync(path.join(subDir, filename), data);
+        picPath = `/uploads/groups/${filename}`;
+      }
     }
+    const group = await db.createGroup(name.trim(), req.user.id, memberIds, picPath);
+    const members = await db.getGroupMembers(group.id);
+    res.json({ ...group, members });
+  } catch (err) {
+    console.error('[groups/create] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
-  const group = await db.createGroup(name.trim(), req.user.id, memberIds, picPath);
-  const members = await db.getGroupMembers(group.id);
-  res.json({ ...group, members });
 });
 
 app.get('/api/groups', authMiddleware, async (req, res) => {
-  const groups = await db.getGroupsForUser(req.user.id);
-  res.json(groups);
+  try {
+    const groups = await db.getGroupsForUser(req.user.id);
+    res.json(groups);
+  } catch (err) {
+    console.error('[groups] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 app.get('/api/groups/:groupId', authMiddleware, async (req, res) => {
-  const groupId = parseInt(req.params.groupId);
-  if (!await db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
-  const members = await db.getGroupMembers(groupId);
-  res.json({ members });
+  try {
+    const groupId = parseInt(req.params.groupId);
+    if (!await db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
+    const members = await db.getGroupMembers(groupId);
+    res.json({ members });
+  } catch (err) {
+    console.error('[groups/members] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 app.get('/api/groups/:groupId/messages', authMiddleware, async (req, res) => {
-  const groupId = parseInt(req.params.groupId);
-  if (!await db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
-  const messages = await db.getGroupMessages(groupId);
-  const ids = messages.map(m => m.id);
-  const reactionsMap = await db.getReactionsForMessages(ids, 'group');
-  messages.forEach(m => { m.reactions = reactionsMap[m.id] || []; });
-  res.json(messages);
+  try {
+    const groupId = parseInt(req.params.groupId);
+    if (!await db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
+    const messages = await db.getGroupMessages(groupId);
+    const ids = messages.map(m => m.id);
+    const reactionsMap = await db.getReactionsForMessages(ids, 'group');
+    messages.forEach(m => { m.reactions = reactionsMap[m.id] || []; });
+    res.json(messages);
+  } catch (err) {
+    console.error('[groups/messages] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 app.post('/api/groups/:groupId/add-member', authMiddleware, async (req, res) => {
-  const groupId = parseInt(req.params.groupId);
-  const { userId } = req.body;
-  if (!await db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
-  await db.addGroupMember(groupId, Number(userId));
-  res.json({ ok: true });
+  try {
+    const groupId = parseInt(req.params.groupId);
+    const { userId } = req.body;
+    if (!await db.isGroupMember(groupId, req.user.id)) return res.status(403).json({ error: 'Pas membre' });
+    await db.addGroupMember(groupId, Number(userId));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[groups/add-member] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 app.post('/api/groups/:groupId/leave', authMiddleware, async (req, res) => {
-  const groupId = parseInt(req.params.groupId);
-  await db.removeGroupMember(groupId, req.user.id);
-  res.json({ ok: true });
+  try {
+    const groupId = parseInt(req.params.groupId);
+    await db.removeGroupMember(groupId, req.user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[groups/leave] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Set admin
 app.post('/api/groups/:groupId/set-admin', authMiddleware, async (req, res) => {
-  const groupId = parseInt(req.params.groupId);
-  if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
-  const { userId } = req.body;
-  await db.setGroupAdmin(groupId, Number(userId));
-  res.json({ ok: true });
+  try {
+    const groupId = parseInt(req.params.groupId);
+    if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+    const { userId } = req.body;
+    await db.setGroupAdmin(groupId, Number(userId));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[groups/set-admin] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Update group pic (admin only)
 app.post('/api/groups/:groupId/update-pic', authMiddleware, async (req, res) => {
-  const groupId = parseInt(req.params.groupId);
-  if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
-  const { pic } = req.body;
-  if (!pic) return res.status(400).json({ error: 'Photo requise' });
-  const matches = pic.match(/^data:image\/(\w+);base64,(.+)$/);
-  if (!matches) return res.status(400).json({ error: 'Format invalide' });
-  const ext = matches[1];
-  const data = Buffer.from(matches[2], 'base64');
-  const subDir = path.join(uploadsDir, 'groups');
-  if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
-  const filename = `group-${groupId}-${Date.now()}.${ext}`;
-  fs.writeFileSync(path.join(subDir, filename), data);
-  const picPath = `/uploads/groups/${filename}`;
-  await db.updateGroupPic(groupId, picPath);
-  res.json({ ok: true, pic: picPath });
+  try {
+    const groupId = parseInt(req.params.groupId);
+    if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+    const { pic } = req.body;
+    if (!pic) return res.status(400).json({ error: 'Photo requise' });
+    const matches = pic.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!matches) return res.status(400).json({ error: 'Format invalide' });
+    const ext = matches[1];
+    const data = Buffer.from(matches[2], 'base64');
+    const subDir = path.join(uploadsDir, 'groups');
+    if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+    const filename = `group-${groupId}-${Date.now()}.${ext}`;
+    fs.writeFileSync(path.join(subDir, filename), data);
+    const picPath = `/uploads/groups/${filename}`;
+    await db.updateGroupPic(groupId, picPath);
+    res.json({ ok: true, pic: picPath });
+  } catch (err) {
+    console.error('[groups/update-pic] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Remove admin (admin only)
 app.post('/api/groups/:groupId/remove-admin', authMiddleware, async (req, res) => {
-  const groupId = parseInt(req.params.groupId);
-  if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
-  const { userId } = req.body;
-  await db.removeGroupAdmin(groupId, Number(userId));
-  res.json({ ok: true });
+  try {
+    const groupId = parseInt(req.params.groupId);
+    if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+    const { userId } = req.body;
+    await db.removeGroupAdmin(groupId, Number(userId));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[groups/remove-admin] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Remove member (admin only)
 app.post('/api/groups/:groupId/remove-member', authMiddleware, async (req, res) => {
-  const groupId = parseInt(req.params.groupId);
-  if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
-  const { userId } = req.body;
-  await db.removeGroupMember(groupId, Number(userId));
-  res.json({ ok: true });
+  try {
+    const groupId = parseInt(req.params.groupId);
+    if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+    const { userId } = req.body;
+    await db.removeGroupMember(groupId, Number(userId));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[groups/remove-member] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Delete group (admin only)
 app.post('/api/groups/:groupId/delete', authMiddleware, async (req, res) => {
-  const groupId = parseInt(req.params.groupId);
-  if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
-  await db.deleteGroup(groupId);
-  res.json({ ok: true });
+  try {
+    const groupId = parseInt(req.params.groupId);
+    if (!await db.isGroupAdmin(groupId, req.user.id)) return res.status(403).json({ error: 'Tu n\'es pas admin' });
+    await db.deleteGroup(groupId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[groups/delete] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Block user
 app.post('/api/block', authMiddleware, async (req, res) => {
-  const { userId } = req.body;
-  if (!userId) return res.status(400).json({ error: 'User requis' });
-  await db.blockUser(req.user.id, Number(userId));
-  res.json({ ok: true });
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'User requis' });
+    await db.blockUser(req.user.id, Number(userId));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[block] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Unblock user
 app.post('/api/unblock', authMiddleware, async (req, res) => {
-  const { userId } = req.body;
-  if (!userId) return res.status(400).json({ error: 'User requis' });
-  await db.unblockUser(req.user.id, Number(userId));
-  res.json({ ok: true });
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'User requis' });
+    await db.unblockUser(req.user.id, Number(userId));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[unblock] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
-// Get blocked users
 app.get('/api/blocked', authMiddleware, async (req, res) => {
   try {
     const list = await db.getBlockedUsers(req.user.id);
     res.json(list);
-  } catch(e) { res.json([]); }
+  } catch (err) {
+    console.error('[blocked] error:', err);
+    res.json([]);
+  }
 });
 
 // --- PUSH NOTIFICATIONS ---
@@ -482,53 +584,47 @@ io.on('connection', async (socket) => {
   }
 
   socket.on('send-message', async (data) => {
-    const { receiverId, content, type, fileUrl, fileName, replyTo } = data;
-    if ((!content && !fileUrl) || !receiverId) return;
+    try {
+      const { receiverId, content, type, fileUrl, fileName, replyTo } = data;
+      if ((!content && !fileUrl) || !receiverId) return;
 
-    const rid = Number(receiverId);
-    // Check if blocked
-    const blocked = await db.getBlockedUsers(rid);
-    if (blocked.some(b => b.blocked_id === userId)) return; // receiver blocked sender
-    const blocked2 = await db.getBlockedUsers(userId);
-    if (blocked2.some(b => b.blocked_id === rid)) return; // sender blocked receiver
-    // Auto-add contact both ways if not already contacts
-    await db.addContact(userId, rid, '');
-    await db.addContact(rid, userId, '');
-    const result = await db.saveMessage(userId, rid, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null);
-    const message = {
-      id: Number(result.lastInsertRowid),
-      sender_id: userId,
-      receiver_id: rid,
-      content: content || '',
-      type: type || 'text',
-      file_url: fileUrl || '',
-      file_name: fileName || '',
-      reply_to: replyTo || null,
-      sender_name: socket.user.username,
-      timestamp: new Date().toISOString()
-    };
+      const rid = Number(receiverId);
+      const blocked = await db.getBlockedUsers(rid);
+      if (blocked.some(b => b.blocked_id === userId)) return;
+      const blocked2 = await db.getBlockedUsers(userId);
+      if (blocked2.some(b => b.blocked_id === rid)) return;
+      await db.addContact(userId, rid, '');
+      await db.addContact(rid, userId, '');
+      const result = await db.saveMessage(userId, rid, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null);
+      const message = {
+        id: Number(result.lastInsertRowid),
+        sender_id: userId,
+        receiver_id: rid,
+        content: content || '',
+        type: type || 'text',
+        file_url: fileUrl || '',
+        file_name: fileName || '',
+        reply_to: replyTo || null,
+        sender_name: socket.user.username,
+        timestamp: new Date().toISOString()
+      };
 
-    console.log(`Message de ${userId} vers ${rid}, en ligne: ${JSON.stringify([...onlineUsers.entries()])}`);
+      const receiverSocket = onlineUsers.get(rid);
+      if (rid !== userId && receiverSocket) {
+        io.to(receiverSocket).emit('receive-message', message);
+      }
+      socket.emit('receive-message', message);
 
-    const receiverSocket = onlineUsers.get(rid);
-    if (rid !== userId && receiverSocket) {
-      console.log(`-> envoyé au socket ${receiverSocket}`);
-      io.to(receiverSocket).emit('receive-message', message);
-    } else if (rid === userId) {
-      console.log(`-> message à soi-même (notes)`);
-    } else {
-      console.log(`-> destinataire ${rid} pas en ligne`);
+      const senderUser = await db.getUserById(userId);
+      const senderName = senderUser ? senderUser.full_name : socket.user.username;
+      await sendPushToUser(rid, {
+        title: senderName,
+        body: content || (type === 'voice' ? 'Message vocal' : type === 'image' ? 'Photo' : type === 'video' ? 'Vidéo' : fileName || 'Fichier'),
+        tag: `dm-${userId}`
+      });
+    } catch (err) {
+      console.error('[send-message] error:', err);
     }
-    socket.emit('receive-message', message);
-
-    // Push notification to receiver
-    const senderUser = await db.getUserById(userId);
-    const senderName = senderUser ? senderUser.full_name : socket.user.username;
-    await sendPushToUser(rid, {
-      title: senderName,
-      body: content || (type === 'voice' ? 'Message vocal' : type === 'image' ? 'Photo' : type === 'video' ? 'Vidéo' : fileName || 'Fichier'),
-      tag: `dm-${userId}`
-    });
   });
 
   socket.on('typing', (receiverId) => {
@@ -545,45 +641,47 @@ io.on('connection', async (socket) => {
     }
   });
 
-  // Group message
   socket.on('send-group-message', async (data) => {
-    const { groupId, content, type, fileUrl, fileName, replyTo } = data;
-    if ((!content && !fileUrl) || !groupId) return;
-    const gid = Number(groupId);
-    if (!await db.isGroupMember(gid, userId)) return;
+    try {
+      const { groupId, content, type, fileUrl, fileName, replyTo } = data;
+      if ((!content && !fileUrl) || !groupId) return;
+      const gid = Number(groupId);
+      if (!await db.isGroupMember(gid, userId)) return;
 
-    const result = await db.saveGroupMessage(gid, userId, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null);
-    const user = await db.getUserById(userId);
-    const message = {
-      id: Number(result.lastInsertRowid),
-      group_id: gid,
-      sender_id: userId,
-      content: content || '',
-      type: type || 'text',
-      file_url: fileUrl || '',
-      file_name: fileName || '',
-      reply_to: replyTo || null,
-      sender_name: user ? user.username : socket.user.username,
-      sender_full_name: user ? user.full_name : '',
-      sender_pic: user ? user.profile_pic : '',
-      timestamp: new Date().toISOString()
-    };
+      const result = await db.saveGroupMessage(gid, userId, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null);
+      const user = await db.getUserById(userId);
+      const message = {
+        id: Number(result.lastInsertRowid),
+        group_id: gid,
+        sender_id: userId,
+        content: content || '',
+        type: type || 'text',
+        file_url: fileUrl || '',
+        file_name: fileName || '',
+        reply_to: replyTo || null,
+        sender_name: user ? user.username : socket.user.username,
+        sender_full_name: user ? user.full_name : '',
+        sender_pic: user ? user.profile_pic : '',
+        timestamp: new Date().toISOString()
+      };
 
-    io.to(`group-${gid}`).emit('receive-group-message', message);
+      io.to(`group-${gid}`).emit('receive-group-message', message);
 
-    // Push notification to all group members (except sender)
-    const groupMembers = await db.getGroupMembers(gid);
-    const groupInfo = await db.queryOne('SELECT name FROM groups_ WHERE id = $1', [gid]);
-    const groupName = groupInfo ? groupInfo.name : 'Groupe';
-    const senderName2 = user ? user.full_name : socket.user.username;
-    for (const member of groupMembers) {
-      if (member.id !== userId) {
-        await sendPushToUser(member.id, {
-          title: `${senderName2} (${groupName})`,
-          body: content || (type === 'voice' ? 'Message vocal' : type === 'image' ? 'Photo' : type === 'video' ? 'Vidéo' : fileName || 'Fichier'),
-          tag: `group-${gid}`
-        });
+      const groupMembers = await db.getGroupMembers(gid);
+      const groupInfo = await db.queryOne('SELECT name FROM groups_ WHERE id = $1', [gid]);
+      const groupName = groupInfo ? groupInfo.name : 'Groupe';
+      const senderName2 = user ? user.full_name : socket.user.username;
+      for (const member of groupMembers) {
+        if (member.id !== userId) {
+          await sendPushToUser(member.id, {
+            title: `${senderName2} (${groupName})`,
+            body: content || (type === 'voice' ? 'Message vocal' : type === 'image' ? 'Photo' : type === 'video' ? 'Vidéo' : fileName || 'Fichier'),
+            tag: `group-${gid}`
+          });
+        }
       }
+    } catch (err) {
+      console.error('[send-group-message] error:', err);
     }
   });
 
@@ -601,45 +699,55 @@ io.on('connection', async (socket) => {
     socket.join(`group-${Number(groupId)}`);
   });
 
-  // Reactions via socket (real-time)
   socket.on('add-reaction', async (data) => {
-    const { messageId, messageType, emoji } = data;
-    await db.addReaction(Number(messageId), messageType || 'dm', userId, emoji);
-    const reaction = { messageId: Number(messageId), messageType, emoji, user_id: userId, full_name: socket.user.username };
-    if (messageType === 'group' && data.groupId) {
-      io.to(`group-${Number(data.groupId)}`).emit('reaction-added', reaction);
-    } else if (data.receiverId) {
-      const receiverSocket = onlineUsers.get(Number(data.receiverId));
-      if (receiverSocket) io.to(receiverSocket).emit('reaction-added', reaction);
-      socket.emit('reaction-added', reaction);
+    try {
+      const { messageId, messageType, emoji } = data;
+      await db.addReaction(Number(messageId), messageType || 'dm', userId, emoji);
+      const reaction = { messageId: Number(messageId), messageType, emoji, user_id: userId, full_name: socket.user.username };
+      if (messageType === 'group' && data.groupId) {
+        io.to(`group-${Number(data.groupId)}`).emit('reaction-added', reaction);
+      } else if (data.receiverId) {
+        const receiverSocket = onlineUsers.get(Number(data.receiverId));
+        if (receiverSocket) io.to(receiverSocket).emit('reaction-added', reaction);
+        socket.emit('reaction-added', reaction);
+      }
+    } catch (err) {
+      console.error('[add-reaction] error:', err);
     }
   });
 
   socket.on('remove-reaction', async (data) => {
-    const { messageId, messageType, emoji } = data;
-    await db.removeReaction(Number(messageId), messageType || 'dm', userId, emoji);
-    const reaction = { messageId: Number(messageId), messageType, emoji, user_id: userId };
-    if (messageType === 'group' && data.groupId) {
-      io.to(`group-${Number(data.groupId)}`).emit('reaction-removed', reaction);
-    } else if (data.receiverId) {
-      const receiverSocket = onlineUsers.get(Number(data.receiverId));
-      if (receiverSocket) io.to(receiverSocket).emit('reaction-removed', reaction);
-      socket.emit('reaction-removed', reaction);
+    try {
+      const { messageId, messageType, emoji } = data;
+      await db.removeReaction(Number(messageId), messageType || 'dm', userId, emoji);
+      const reaction = { messageId: Number(messageId), messageType, emoji, user_id: userId };
+      if (messageType === 'group' && data.groupId) {
+        io.to(`group-${Number(data.groupId)}`).emit('reaction-removed', reaction);
+      } else if (data.receiverId) {
+        const receiverSocket = onlineUsers.get(Number(data.receiverId));
+        if (receiverSocket) io.to(receiverSocket).emit('reaction-removed', reaction);
+        socket.emit('reaction-removed', reaction);
+      }
+    } catch (err) {
+      console.error('[remove-reaction] error:', err);
     }
   });
 
-  // Delete message via socket (real-time soft delete)
   socket.on('delete-message', async (data) => {
-    const { messageId, messageType, groupId, receiverId } = data;
-    if (messageType === 'group') {
-      await db.deleteGroupMessage(Number(messageId), userId);
-      io.to(`group-${Number(groupId)}`).emit('message-deleted', { messageId: Number(messageId), sender_name: socket.user.username });
-    } else {
-      await db.deleteMessage(Number(messageId), userId);
-      const receiverSocket = onlineUsers.get(Number(receiverId));
-      const deleteData = { messageId: Number(messageId), sender_name: socket.user.username };
-      if (receiverSocket) io.to(receiverSocket).emit('message-deleted', deleteData);
-      socket.emit('message-deleted', deleteData);
+    try {
+      const { messageId, messageType, groupId, receiverId } = data;
+      if (messageType === 'group') {
+        await db.deleteGroupMessage(Number(messageId), userId);
+        io.to(`group-${Number(groupId)}`).emit('message-deleted', { messageId: Number(messageId), sender_name: socket.user.username });
+      } else {
+        await db.deleteMessage(Number(messageId), userId);
+        const receiverSocket = onlineUsers.get(Number(receiverId));
+        const deleteData = { messageId: Number(messageId), sender_name: socket.user.username };
+        if (receiverSocket) io.to(receiverSocket).emit('message-deleted', deleteData);
+        socket.emit('message-deleted', deleteData);
+      }
+    } catch (err) {
+      console.error('[delete-message] error:', err);
     }
   });
 
