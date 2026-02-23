@@ -477,7 +477,7 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
         <div className="empty-chat-content">
           <div className="empty-chat-icon"><img src="/dragon-logo.svg" alt="HereToChat" style={{ width: 100, height: 100 }} /></div>
           <h2>HereToChat</h2>
-          <p>Sélectionne une conversation pour commencer</p>
+          <p>Sélectionne tous les contacts</p>
         </div>
       </div>
     );
