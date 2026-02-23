@@ -265,7 +265,7 @@ function GroupInfoPanel({ group, currentUser, token, onClose, onLeaveGroup, onDe
               <img src={picUrl(groupPic)} alt={group.name} className="avatar group-avatar" style={{ width: 80, height: 80, objectFit: 'cover' }} />
             ) : (
               <div className="avatar group-avatar" style={{ width: 80, height: 80, fontSize: 32 }}>
-                {group.name[0].toUpperCase()}
+                {(group.name || '?')[0].toUpperCase()}
               </div>
             )}
             {isAdmin && <div className="group-pic-edit-overlay">📷</div>}
@@ -367,7 +367,7 @@ function ProfileViewer({ user, onClose }) {
   );
 }
 
-export default function ChatWindow({ messages, currentUser, selectedUser, selectedGroup, onlineUsers, typing, onBack, onDeleteMessage, onReply, onReaction, onRemoveReaction, onLeaveGroup, onDeleteGroup, onBlockUser, token, users }) {
+export default function ChatWindow({ messages, currentUser, selectedUser, selectedGroup, onlineUsers, typing, onBack, onDeleteMessage, onReply, onReaction, onRemoveReaction, onLeaveGroup, onDeleteGroup, onBlockUser, onCall, token, users }) {
   const bottomRef = useRef(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
   const bgFileRef = useRef(null);
@@ -539,7 +539,7 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
             <img src={picUrl(selectedGroup.pic)} alt={selectedGroup.name} className="avatar group-avatar" style={{ width: 42, height: 42, objectFit: 'cover', cursor: 'pointer' }} onClick={() => setShowGroupInfo(true)} />
           ) : (
             <div className="avatar group-avatar" style={{ width: 42, height: 42, fontSize: 20, cursor: 'pointer' }} onClick={() => setShowGroupInfo(true)}>
-              {selectedGroup.name[0].toUpperCase()}
+              {(selectedGroup.name || '?')[0].toUpperCase()}
             </div>
           )
         ) : (
@@ -551,8 +551,8 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
         </div>
         {!isGroup && selectedUser.phone && (
           <>
-            <button onClick={() => { window.location.href = `tel:${selectedUser.phone}`; }} title="Appeler" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px' }}>📞</button>
-            <button onClick={() => { window.location.href = `facetime:${selectedUser.phone}`; }} title="FaceTime" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px' }}>🎥</button>
+            <button onClick={() => onCall && onCall(selectedUser, 'audio')} title="Appeler" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px' }}>📞</button>
+            <button onClick={() => onCall && onCall(selectedUser, 'video')} title="Appel vidéo" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px' }}>🎥</button>
           </>
         )}
         {!isGroup && onBlockUser && (

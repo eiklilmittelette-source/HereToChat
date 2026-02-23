@@ -18,6 +18,7 @@ webpush.setVapidDetails('mailto:heretochat@example.com', VAPID_PUBLIC, VAPID_PRI
 
 // Normalize phone numbers: remove spaces, dashes, dots, handle +33/0
 function normalizePhone(p) {
+  if (!p || typeof p !== 'string') return '';
   let n = p.replace(/[\s\-\.\(\)]/g, '');
   // Convert +33 to 0 (French numbers)
   if (n.startsWith('+33')) n = '0' + n.slice(3);
@@ -243,6 +244,7 @@ app.post('/api/upload', authMiddleware, (req, res) => {
       const fullMime = dataMatch[1];
       const mime = fullMime.split(';')[0];
       const data = Buffer.from(dataMatch[2], 'base64');
+      if (data.length > 15 * 1024 * 1024) return res.status(413).json({ error: 'Fichier trop volumineux (max 15MB)' });
       if (mime.startsWith('audio/')) {
         ext = mime.includes('webm') ? 'webm' : mime.includes('mp4') ? 'm4a' : mime.includes('aac') ? 'm4a' : mime.includes('ogg') ? 'ogg' : mime.includes('mpeg') ? 'mp3' : 'webm';
         folder = 'voice';
@@ -549,8 +551,8 @@ async function sendPushToUser(userId, payload) {
   if (!subs || subs.length === 0) return;
   const data = JSON.stringify(payload);
   for (const sub of subs) {
-    webpush.sendNotification(sub, data).catch(async () => {
-      // Remove invalid subscription
+    webpush.sendNotification(sub, data).catch(async (err) => {
+      console.error('[push] error for', sub.endpoint?.slice(0, 50), ':', err.statusCode || err.message);
       await db.removePushSubscription(sub.endpoint);
     });
   }
@@ -730,6 +732,67 @@ io.on('connection', async (socket) => {
       }
     } catch (err) {
       console.error('[remove-reaction] error:', err);
+    }
+  });
+
+  // --- APPELS ---
+  socket.on('call-user', async (data) => {
+    try {
+      const { receiverId, callType } = data;
+      const rid = Number(receiverId);
+      const receiverSocket = onlineUsers.get(rid);
+      const caller = await db.getUserById(userId);
+      if (!receiverSocket) {
+        socket.emit('call-failed', { reason: 'offline' });
+        return;
+      }
+      io.to(receiverSocket).emit('incoming-call', {
+        callerId: userId,
+        callerName: caller ? caller.full_name : socket.user.username,
+        callerPic: caller ? caller.profile_pic : '',
+        callerPhone: caller ? caller.phone : '',
+        callType: callType || 'audio'
+      });
+      // Push notification too
+      const senderName = caller ? caller.full_name : socket.user.username;
+      await sendPushToUser(rid, {
+        title: `${senderName} vous appelle`,
+        body: callType === 'video' ? 'Appel vidéo entrant' : 'Appel vocal entrant',
+        tag: `call-${userId}`
+      });
+    } catch (err) {
+      console.error('[call-user] error:', err);
+    }
+  });
+
+  socket.on('call-response', async (data) => {
+    try {
+      const { callerId, response } = data;
+      const callerSocket = onlineUsers.get(Number(callerId));
+      if (!callerSocket) return;
+      const responder = await db.getUserById(userId);
+      if (response === 'accept') {
+        io.to(callerSocket).emit('call-accepted', {
+          receiverId: userId,
+          receiverPhone: responder ? responder.phone : ''
+        });
+      } else {
+        io.to(callerSocket).emit('call-declined', { receiverId: userId });
+      }
+    } catch (err) {
+      console.error('[call-response] error:', err);
+    }
+  });
+
+  socket.on('call-cancel', (data) => {
+    try {
+      const { receiverId } = data;
+      const receiverSocket = onlineUsers.get(Number(receiverId));
+      if (receiverSocket) {
+        io.to(receiverSocket).emit('call-cancelled', { callerId: userId });
+      }
+    } catch (err) {
+      console.error('[call-cancel] error:', err);
     }
   });
 

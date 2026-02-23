@@ -8,9 +8,9 @@ export default defineConfig({
     host: true,
     https: true,
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/uploads': 'http://localhost:3001',
-      '/socket.io': { target: 'http://localhost:3001', ws: true }
+      '/api': { target: 'http://localhost:3001', secure: false, changeOrigin: true },
+      '/uploads': { target: 'http://localhost:3001', secure: false, changeOrigin: true },
+      '/socket.io': { target: 'http://localhost:3001', ws: true, secure: false, changeOrigin: true }
     }
   }
 });

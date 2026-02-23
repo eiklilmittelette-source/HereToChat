@@ -19,11 +19,92 @@ function urlBase64ToUint8Array(base64String) {
 const notifAudio = new Audio('/notif.wav');
 notifAudio.volume = 1.0;
 
+const ringtoneAudio = new Audio('/notif.wav');
+ringtoneAudio.volume = 1.0;
+ringtoneAudio.loop = true;
+
 function playNotifSound() {
   try {
     notifAudio.currentTime = 0;
     notifAudio.play().catch(() => {});
   } catch {}
+}
+
+function startRingtone() {
+  try { ringtoneAudio.currentTime = 0; ringtoneAudio.play().catch(() => {}); } catch {}
+}
+
+function stopRingtone() {
+  try { ringtoneAudio.pause(); ringtoneAudio.currentTime = 0; } catch {}
+}
+
+function IncomingCallOverlay({ call, onAccept, onDecline }) {
+  useEffect(() => {
+    startRingtone();
+    return () => stopRingtone();
+  }, []);
+
+  // Auto-decline after 30s
+  useEffect(() => {
+    const t = setTimeout(() => onDecline(), 30000);
+    return () => clearTimeout(t);
+  }, [onDecline]);
+
+  return (
+    <div className="call-overlay">
+      <div className="call-card">
+        <div className="call-avatar-ring">
+          {call.callerPic ? (
+            <img src={call.callerPic.startsWith('http') ? call.callerPic : apiUrl(call.callerPic)} alt="" className="call-avatar-img" />
+          ) : (
+            <div className="call-avatar-placeholder">{(call.callerName || '?')[0].toUpperCase()}</div>
+          )}
+        </div>
+        <h2 className="call-name">{call.callerName || 'Inconnu'}</h2>
+        <p className="call-type">{call.callType === 'video' ? 'Appel vidéo entrant...' : 'Appel vocal entrant...'}</p>
+        <div className="call-buttons">
+          <button className="decline-call-btn" onClick={onDecline}>
+            <span>📵</span>
+            <span>Refuser</span>
+          </button>
+          <button className="accept-call-btn" onClick={onAccept}>
+            <span>📞</span>
+            <span>Accepter</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OutgoingCallOverlay({ call, onCancel }) {
+  // Auto-cancel after 30s
+  useEffect(() => {
+    const t = setTimeout(() => onCancel(), 30000);
+    return () => clearTimeout(t);
+  }, [onCancel]);
+
+  return (
+    <div className="call-overlay">
+      <div className="call-card">
+        <div className="call-avatar-ring outgoing">
+          {call.receiverPic ? (
+            <img src={call.receiverPic.startsWith('http') ? call.receiverPic : apiUrl(call.receiverPic)} alt="" className="call-avatar-img" />
+          ) : (
+            <div className="call-avatar-placeholder">{(call.receiverName || '?')[0].toUpperCase()}</div>
+          )}
+        </div>
+        <h2 className="call-name">{call.receiverName || 'Inconnu'}</h2>
+        <p className="call-type">{call.callType === 'video' ? 'Appel vidéo...' : 'Appel vocal...'}</p>
+        <div className="call-buttons">
+          <button className="decline-call-btn" onClick={onCancel}>
+            <span>📵</span>
+            <span>Annuler</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -37,11 +118,16 @@ export default function App() {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [typing, setTyping] = useState(false);
   const [replyTo, setReplyTo] = useState(null);
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [outgoingCall, setOutgoingCall] = useState(null);
+  const [callToast, setCallToast] = useState(null);
+  const outgoingCallRef = useRef(null);
   const selectedUserRef = useRef(null);
   const selectedGroupRef = useRef(null);
 
   useEffect(() => { selectedUserRef.current = selectedUser; }, [selectedUser]);
   useEffect(() => { selectedGroupRef.current = selectedGroup; }, [selectedGroup]);
+  useEffect(() => { outgoingCallRef.current = outgoingCall; }, [outgoingCall]);
 
   // Restore session
   useEffect(() => {
@@ -54,6 +140,7 @@ export default function App() {
   useEffect(() => {
     function unlockAudio() {
       notifAudio.play().then(() => { notifAudio.pause(); notifAudio.currentTime = 0; }).catch(() => {});
+      ringtoneAudio.play().then(() => { ringtoneAudio.pause(); ringtoneAudio.currentTime = 0; }).catch(() => {});
     }
     document.addEventListener('click', unlockAudio, { once: true });
     document.addEventListener('touchstart', unlockAudio, { once: true });
@@ -128,7 +215,7 @@ export default function App() {
         });
       }
       // Notification for incoming DM + refresh contacts
-      if (msg.sender_id !== Number(JSON.parse(localStorage.getItem('user') || '{}').id)) {
+      if (msg.sender_id !== Number(JSON.parse(localStorage.getItem('user') || '{}').id || 0)) {
         playNotifSound();
         showNotification(msg.sender_name || 'Nouveau message', msg.content || 'Fichier');
         // Refresh contacts list (sender auto-added as contact on server)
@@ -145,7 +232,7 @@ export default function App() {
         });
       }
       // Notification for group message
-      const currentUserId = Number(JSON.parse(localStorage.getItem('user') || '{}').id);
+      const currentUserId = Number(JSON.parse(localStorage.getItem('user') || '{}').id || 0);
       if (msg.sender_id !== currentUserId) {
         playNotifSound();
         showNotification(msg.sender_full_name || msg.sender_name || 'Groupe', msg.content || 'Fichier');
@@ -183,6 +270,43 @@ export default function App() {
         }
         return m;
       }));
+    });
+
+    // --- Call events ---
+    socket.on('incoming-call', (data) => {
+      setIncomingCall(data);
+    });
+
+    socket.on('call-accepted', (data) => {
+      const call = outgoingCallRef.current;
+      setOutgoingCall(null);
+      if (call) {
+        const phone = data.receiverPhone || call.receiverPhone;
+        if (call.callType === 'video') {
+          window.location.href = `facetime:${phone}`;
+        } else {
+          window.location.href = `tel:${phone}`;
+        }
+      }
+    });
+
+    socket.on('call-declined', () => {
+      setOutgoingCall(null);
+      setCallToast('Appel refusé');
+      setTimeout(() => setCallToast(null), 3000);
+    });
+
+    socket.on('call-cancelled', () => {
+      setIncomingCall(null);
+      stopRingtone();
+    });
+
+    socket.on('call-failed', (data) => {
+      setOutgoingCall(null);
+      if (data.reason === 'offline') {
+        setCallToast('Utilisateur hors ligne');
+        setTimeout(() => setCallToast(null), 3000);
+      }
     });
 
     return () => disconnectSocket();
@@ -348,6 +472,54 @@ export default function App() {
     setUsers(await r.json());
   }
 
+  function handleCall(targetUser, callType) {
+    const socket = getSocket();
+    if (!socket) return;
+    setOutgoingCall({
+      receiverId: targetUser.id,
+      receiverName: targetUser.nickname || targetUser.full_name || targetUser.username,
+      receiverPic: targetUser.profile_pic || '',
+      receiverPhone: targetUser.phone || '',
+      callType
+    });
+    socket.emit('call-user', { receiverId: targetUser.id, callType });
+  }
+
+  function handleAcceptCall() {
+    const call = incomingCall;
+    setIncomingCall(null);
+    stopRingtone();
+    const socket = getSocket();
+    if (socket && call) {
+      socket.emit('call-response', { callerId: call.callerId, response: 'accept' });
+      // Open native call
+      if (call.callType === 'video') {
+        window.location.href = `facetime:${call.callerPhone}`;
+      } else {
+        window.location.href = `tel:${call.callerPhone}`;
+      }
+    }
+  }
+
+  function handleDeclineCall() {
+    const call = incomingCall;
+    setIncomingCall(null);
+    stopRingtone();
+    const socket = getSocket();
+    if (socket && call) {
+      socket.emit('call-response', { callerId: call.callerId, response: 'decline' });
+    }
+  }
+
+  function handleCancelCall() {
+    const call = outgoingCall;
+    setOutgoingCall(null);
+    const socket = getSocket();
+    if (socket && call) {
+      socket.emit('call-cancel', { receiverId: call.receiverId });
+    }
+  }
+
   function handleBack() { setSelectedUser(null); setSelectedGroup(null); setMessages([]); setReplyTo(null); }
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -378,6 +550,7 @@ export default function App() {
           onReaction={handleReaction} onRemoveReaction={handleRemoveReaction}
           onLeaveGroup={handleLeaveGroup} onDeleteGroup={handleDeleteGroup}
           onBlockUser={handleBlockUser}
+          onCall={handleCall}
           token={token} users={users}
         />
         {hasSelection && (
@@ -389,6 +562,15 @@ export default function App() {
           />
         )}
       </div>
+      {incomingCall && (
+        <IncomingCallOverlay call={incomingCall} onAccept={handleAcceptCall} onDecline={handleDeclineCall} />
+      )}
+      {outgoingCall && (
+        <OutgoingCallOverlay call={outgoingCall} onCancel={handleCancelCall} />
+      )}
+      {callToast && (
+        <div className="call-toast">{callToast}</div>
+      )}
     </div>
   );
 }

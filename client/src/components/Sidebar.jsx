@@ -15,7 +15,7 @@ function UserAvatar({ user, size, onClick, editable }) {
   }
   return (
     <div className="avatar" style={{ ...style, fontSize: s * 0.43 }} onClick={onClick}>
-      {(user.nickname || user.full_name || user.username)[0].toUpperCase()}
+      {(user.nickname || user.full_name || user.username || '?')[0].toUpperCase()}
     </div>
   );
 }
@@ -48,7 +48,7 @@ function AddContactModal({ onClose, onAdd, currentUser }) {
   }
 
   async function handleImportContacts() {
-    if (!('contacts' in navigator && 'ContactsManager' in window)) {
+    if (!('contacts' in navigator && 'select' in navigator.contacts)) {
       // Contact Picker API not supported (iPhone, desktop, etc.)
       // Fall back to invite link
       const inviteUrl = `${window.location.origin}?invite=${currentUser?.id || ''}`;
@@ -183,7 +183,7 @@ function AddContactModal({ onClose, onAdd, currentUser }) {
               onClick={handleImportContacts}
               style={{ width: '100%', marginTop: 8, padding: '12px', background: 'linear-gradient(135deg, #2ecc71, #27ae60)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
             >
-              📱 {('contacts' in navigator && 'ContactsManager' in window) ? 'Importer tous les contacts' : 'Inviter des amis'}
+              📱 Importer tous les contacts
             </button>
           </>
         )}
@@ -203,27 +203,48 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
   function handlePicSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
-    // Compress image to max 400x400 for profile pic
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const maxSize = 400;
-      let w = img.width, h = img.height;
-      if (w > maxSize || h > maxSize) {
-        if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
-        else { w = Math.round(w * maxSize / h); h = maxSize; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      const compressed = canvas.toDataURL('image/jpeg', 0.8);
-      setPicPreview(compressed);
-      setPicBase64(compressed);
-      URL.revokeObjectURL(url);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); };
-    img.src = url;
+    // Try compression first, fall back to direct base64
+    try {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        try {
+          const maxSize = 400;
+          let w = img.width, h = img.height;
+          if (w > maxSize || h > maxSize) {
+            if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+            else { w = Math.round(w * maxSize / h); h = maxSize; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL('image/jpeg', 0.8);
+          setPicPreview(compressed);
+          setPicBase64(compressed);
+        } catch (err) {
+          console.error('Compression error, using raw file:', err);
+          // Fallback: read as base64 directly
+          const reader = new FileReader();
+          reader.onload = () => { setPicPreview(reader.result); setPicBase64(reader.result); };
+          reader.readAsDataURL(file);
+        }
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        // Fallback: read as base64 directly
+        const reader = new FileReader();
+        reader.onload = () => { setPicPreview(reader.result); setPicBase64(reader.result); };
+        reader.readAsDataURL(file);
+      };
+      img.src = url;
+    } catch (err) {
+      console.error('handlePicSelect error:', err);
+      const reader = new FileReader();
+      reader.onload = () => { setPicPreview(reader.result); setPicBase64(reader.result); };
+      reader.readAsDataURL(file);
+    }
   }
 
   async function handleSave(e) {
@@ -268,7 +289,6 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
             ref={picRef}
             type="file"
             accept="image/*"
-            capture="environment"
             onChange={handlePicSelect}
             style={{ display: 'none' }}
           />
@@ -568,7 +588,7 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
               <img src={picUrl(group.pic)} alt={group.name} className="avatar group-avatar" style={{ width: 44, height: 44, objectFit: 'cover' }} />
             ) : (
               <div className="avatar group-avatar" style={{ fontSize: 20 }}>
-                {group.name[0].toUpperCase()}
+                {(group.name || '?')[0].toUpperCase()}
               </div>
             )}
             <div className="user-item-info">

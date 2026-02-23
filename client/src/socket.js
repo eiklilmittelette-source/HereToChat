@@ -8,6 +8,9 @@ export function connectSocket(token) {
   socket = io(window.location.origin, {
     auth: { token }
   });
+  socket.on('connect_error', (err) => {
+    console.error('Socket connection error:', err.message);
+  });
   return socket;
 }
 
