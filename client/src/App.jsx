@@ -50,6 +50,26 @@ export default function App() {
     if (savedToken && savedUser) { setToken(savedToken); setUser(JSON.parse(savedUser)); }
   }, []);
 
+  // Unlock audio on first user gesture (required on mobile)
+  useEffect(() => {
+    function unlockAudio() {
+      notifAudio.play().then(() => { notifAudio.pause(); notifAudio.currentTime = 0; }).catch(() => {});
+    }
+    document.addEventListener('click', unlockAudio, { once: true });
+    document.addEventListener('touchstart', unlockAudio, { once: true });
+    return () => { document.removeEventListener('click', unlockAudio); document.removeEventListener('touchstart', unlockAudio); };
+  }, []);
+
+  // Listen for service worker messages (push notification sound)
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    function onSwMessage(event) {
+      if (event.data?.type === 'PLAY_NOTIF_SOUND') playNotifSound();
+    }
+    navigator.serviceWorker.addEventListener('message', onSwMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onSwMessage);
+  }, []);
+
   // Register push notifications
   useEffect(() => {
     if (!token) return;
@@ -75,7 +95,9 @@ export default function App() {
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ subscription })
         });
-      } catch {}
+      } catch (err) {
+        console.error('Push setup error:', err);
+      }
     }
     setupPush();
   }, [token]);
@@ -202,12 +224,17 @@ export default function App() {
   function handleLogout() { disconnectSocket(); setUser(null); setToken(null); setSelectedUser(null); setSelectedGroup(null); setMessages([]); localStorage.removeItem('token'); localStorage.removeItem('user'); }
 
   async function handleAddContact(phone, nickname) {
-    const res = await fetch(apiUrl('/api/contacts/add'), { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ phone, nickname }) });
-    const data = await res.json();
-    if (!res.ok) return { error: data.error };
-    const r2 = await fetch(apiUrl('/api/users'), { headers: { Authorization: `Bearer ${token}` } });
-    setUsers(await r2.json());
-    return data;
+    try {
+      const res = await fetch(apiUrl('/api/contacts/add'), { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ phone, nickname }) });
+      const data = await res.json();
+      if (!res.ok) return { error: data.error || 'Erreur serveur' };
+      const r2 = await fetch(apiUrl('/api/users'), { headers: { Authorization: `Bearer ${token}` } });
+      setUsers(await r2.json());
+      return data;
+    } catch (err) {
+      console.error('handleAddContact error:', err);
+      return { error: 'Erreur de connexion au serveur' };
+    }
   }
 
   async function handleRenameContact(contactId, nickname) {

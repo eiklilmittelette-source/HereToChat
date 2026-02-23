@@ -132,26 +132,34 @@ app.get('/api/users', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/contacts/add', authMiddleware, async (req, res) => {
-  const { phone } = req.body;
-  if (!phone) {
-    return res.status(400).json({ error: 'Numéro de téléphone requis' });
+  try {
+    const { phone } = req.body;
+    console.log('[contacts/add] user:', req.user.id, 'phone:', phone);
+    if (!phone) {
+      return res.status(400).json({ error: 'Numéro de téléphone requis' });
+    }
+    const normalized = normalizePhone(phone.trim());
+    // Try exact match by phone, then normalized, then username, then full search
+    let contact = await db.getUserByPhone(phone.trim());
+    if (!contact) contact = await db.getUserByPhone(normalized);
+    if (!contact) contact = await db.getUserByUsername(phone.trim());
+    if (!contact) {
+      const all = await db.getAllUsers(0);
+      contact = all.find(u => normalizePhone(u.phone || '') === normalized || normalizePhone(u.username || '') === normalized);
+    }
+    if (!contact) {
+      console.log('[contacts/add] not found:', phone, '→', normalized);
+      return res.status(404).json({ error: 'Aucun utilisateur avec ce numéro' });
+    }
+    // Permettre de s'ajouter soi-même (notes personnelles)
+    const nickname = req.body.nickname || '';
+    await db.addContact(req.user.id, contact.id, nickname);
+    console.log('[contacts/add] success:', req.user.id, '→', contact.id);
+    res.json({ id: contact.id, username: contact.username, full_name: contact.full_name, profile_pic: contact.profile_pic, nickname });
+  } catch (err) {
+    console.error('[contacts/add] error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
-  const normalized = normalizePhone(phone.trim());
-  // Try exact match by phone, then normalized, then username, then full search
-  let contact = await db.getUserByPhone(phone.trim());
-  if (!contact) contact = await db.getUserByPhone(normalized);
-  if (!contact) contact = await db.getUserByUsername(phone.trim());
-  if (!contact) {
-    const all = await db.getAllUsers(0);
-    contact = all.find(u => normalizePhone(u.phone || '') === normalized || normalizePhone(u.username || '') === normalized);
-  }
-  if (!contact) {
-    return res.status(404).json({ error: 'Aucun utilisateur avec ce numéro' });
-  }
-  // Permettre de s'ajouter soi-même (notes personnelles)
-  const nickname = req.body.nickname || '';
-  await db.addContact(req.user.id, contact.id, nickname);
-  res.json({ id: contact.id, username: contact.username, full_name: contact.full_name, profile_pic: contact.profile_pic, nickname });
 });
 
 app.post('/api/profile-pic', authMiddleware, async (req, res) => {

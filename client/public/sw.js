@@ -1,19 +1,51 @@
-const CACHE_NAME = 'heretochat-v5';
+const CACHE_NAME = 'heretochat-v6';
 
-self.addEventListener('install', () => self.skipWaiting());
+// Fichiers à pré-cacher au moment de l'installation
+const PRECACHE_URLS = [
+  '/',
+  '/dragon-logo.svg',
+  '/manifest.json',
+  '/notif.wav'
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then(() => self.skipWaiting())
+  );
+});
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((names) => Promise.all(
-      names.map((n) => caches.delete(n))
+      names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))
     )).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (event) => {
-  // Always fetch from network first, never serve stale cache
+  const url = new URL(event.request.url);
+
+  // Ne pas cacher les requêtes API, socket.io et uploads
+  if (url.pathname.startsWith('/api') ||
+      url.pathname.startsWith('/socket.io') ||
+      url.pathname.startsWith('/uploads')) {
+    return;
+  }
+
+  // Network first, fallback to cache, et on met en cache la réponse
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request)
+      .then((response) => {
+        // Cloner la réponse pour la mettre en cache
+        const responseClone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, responseClone);
+        });
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
 
@@ -38,6 +70,10 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     self.registration.showNotification(data.title || 'HereToChat', options)
+      .then(() => self.clients.matchAll({ type: 'window' }))
+      .then(windowClients => {
+        windowClients.forEach(client => client.postMessage({ type: 'PLAY_NOTIF_SOUND' }));
+      })
   );
 });
 

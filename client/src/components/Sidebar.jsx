@@ -84,7 +84,8 @@ function AddContactModal({ onClose, onAdd, currentUser }) {
       } else {
         setTimeout(() => onClose(), 1500);
       }
-    } catch {
+    } catch (err) {
+      console.error('Import contacts error:', err);
       setError('Import annulé');
     } finally {
       setLoading(false);
