@@ -64,17 +64,10 @@ app.post('/api/register', async (req, res) => {
       return res.status(409).json({ error: 'Ce username existe déjà' });
     }
 
-    // Save profile pic if provided (base64)
+    // Save profile pic if provided (base64) - store directly in DB
     let picPath = '';
-    if (profilePic) {
-      const matches = profilePic.match(/^data:image\/(\w+);base64,(.+)$/);
-      if (matches) {
-        const ext = matches[1];
-        const data = Buffer.from(matches[2], 'base64');
-        const filename = `${Date.now()}-${username}.${ext}`;
-        fs.writeFileSync(path.join(uploadsDir, filename), data);
-        picPath = `/uploads/${filename}`;
-      }
+    if (profilePic && profilePic.startsWith('data:image/')) {
+      picPath = profilePic;
     }
 
     const hash = bcrypt.hashSync(password, 10);
@@ -175,15 +168,10 @@ app.post('/api/profile-pic', authMiddleware, async (req, res) => {
   try {
     const { profilePic } = req.body;
     if (!profilePic) return res.status(400).json({ error: 'Photo requise' });
-    const matches = profilePic.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (!matches) return res.status(400).json({ error: 'Format image invalide' });
-    const ext = matches[1];
-    const data = Buffer.from(matches[2], 'base64');
-    const filename = `${Date.now()}-${req.user.id}.${ext}`;
-    fs.writeFileSync(path.join(uploadsDir, filename), data);
-    const picPath = `/uploads/${filename}`;
-    await db.updateUserProfile(req.user.id, null, null, picPath);
-    res.json({ profile_pic: picPath });
+    if (!profilePic.startsWith('data:image/')) return res.status(400).json({ error: 'Format image invalide' });
+    // Store base64 directly in DB (works on Render ephemeral filesystem)
+    await db.updateUserProfile(req.user.id, null, null, profilePic);
+    res.json({ profile_pic: profilePic });
   } catch (err) {
     console.error('[profile-pic] error:', err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -211,15 +199,9 @@ app.post('/api/profile', authMiddleware, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
 
     let picPath = user.profile_pic;
-    if (profilePic) {
-      const matches = profilePic.match(/^data:image\/(\w+);base64,(.+)$/);
-      if (matches) {
-        const ext = matches[1];
-        const data = Buffer.from(matches[2], 'base64');
-        const filename = `${Date.now()}-${req.user.id}.${ext}`;
-        fs.writeFileSync(path.join(uploadsDir, filename), data);
-        picPath = `/uploads/${filename}`;
-      }
+    if (profilePic && profilePic.startsWith('data:image/')) {
+      // Store base64 directly in DB (works on Render ephemeral filesystem)
+      picPath = profilePic;
     }
 
     const newName = fullName && fullName.trim() ? fullName.trim() : user.full_name;

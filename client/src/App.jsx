@@ -55,7 +55,7 @@ function IncomingCallOverlay({ call, onAccept, onDecline }) {
       <div className="call-card">
         <div className="call-avatar-ring">
           {call.callerPic ? (
-            <img src={call.callerPic.startsWith('http') ? call.callerPic : apiUrl(call.callerPic)} alt="" className="call-avatar-img" />
+            <img src={call.callerPic.startsWith('http') || call.callerPic.startsWith('data:') ? call.callerPic : apiUrl(call.callerPic)} alt="" className="call-avatar-img" />
           ) : (
             <div className="call-avatar-placeholder">{(call.callerName || '?')[0].toUpperCase()}</div>
           )}
@@ -89,7 +89,7 @@ function OutgoingCallOverlay({ call, onCancel }) {
       <div className="call-card">
         <div className="call-avatar-ring outgoing">
           {call.receiverPic ? (
-            <img src={call.receiverPic.startsWith('http') ? call.receiverPic : apiUrl(call.receiverPic)} alt="" className="call-avatar-img" />
+            <img src={call.receiverPic.startsWith('http') || call.receiverPic.startsWith('data:') ? call.receiverPic : apiUrl(call.receiverPic)} alt="" className="call-avatar-img" />
           ) : (
             <div className="call-avatar-placeholder">{(call.receiverName || '?')[0].toUpperCase()}</div>
           )}
