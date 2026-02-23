@@ -448,41 +448,44 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
   const [importLoading, setImportLoading] = useState(false);
   const [importStatus, setImportStatus] = useState('');
 
-  const hasContactsApi = typeof navigator !== 'undefined' && 'contacts' in navigator && 'ContactsManager' in window;
-
   async function handleSidebarImport() {
-    if (hasContactsApi) {
+    // Vérifier si l'API Contact Picker est disponible
+    if ('contacts' in navigator && 'select' in navigator.contacts) {
       try {
         const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
         if (!contacts || contacts.length === 0) return;
         setImportLoading(true);
         setImportStatus(`Import de ${contacts.length} contacts...`);
         let added = 0;
+        const missing = [];
         for (const c of contacts) {
           if (c.tel && c.tel[0]) {
             const result = await onAddContact(c.tel[0], c.name?.[0] || '');
             if (!result.error) added++;
+            else if (result.error === 'Aucun utilisateur avec ce numéro') {
+              missing.push(c.name?.[0] || c.tel[0]);
+            }
           }
         }
-        setImportStatus(`${added} contact${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''}`);
-        setTimeout(() => setImportStatus(''), 3000);
+        let msg = `${added} contact${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''}`;
+        if (missing.length > 0) msg += ` · ${missing.length} pas sur l'app`;
+        setImportStatus(msg);
+        setTimeout(() => setImportStatus(''), 5000);
       } catch (err) {
         console.error('Import contacts error:', err);
+        setImportStatus('Import annulé');
+        setTimeout(() => setImportStatus(''), 3000);
       } finally {
         setImportLoading(false);
       }
     } else {
-      // Pas de Contact Picker API — partager le lien d'invitation
-      const inviteUrl = `${window.location.origin}?invite=${currentUser.id}`;
-      const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`;
-      if (navigator.share) {
-        navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {});
+      // API pas disponible — expliquer pourquoi et proposer alternative
+      if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+        setImportStatus('L\'import nécessite HTTPS. Utilise le lien sécurisé de l\'app.');
       } else {
-        navigator.clipboard.writeText(text).then(() => {
-          setImportStatus('Lien d\'invitation copié !');
-          setTimeout(() => setImportStatus(''), 3000);
-        }).catch(() => {});
+        setImportStatus('Import non supporté sur ce navigateur. Utilise Chrome sur Android.');
       }
+      setTimeout(() => setImportStatus(''), 5000);
     }
   }
 
