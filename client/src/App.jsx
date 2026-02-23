@@ -131,9 +131,11 @@ export default function App() {
 
   // Restore session
   useEffect(() => {
-    const savedToken = localStorage.getItem('token');
-    const savedUser = localStorage.getItem('user');
-    if (savedToken && savedUser) { setToken(savedToken); setUser(JSON.parse(savedUser)); }
+    try {
+      const savedToken = localStorage.getItem('token');
+      const savedUser = localStorage.getItem('user');
+      if (savedToken && savedUser) { setToken(savedToken); setUser(JSON.parse(savedUser)); }
+    } catch { localStorage.removeItem('token'); localStorage.removeItem('user'); }
   }, []);
 
   // Unlock audio on first user gesture (required on mobile)
@@ -215,7 +217,9 @@ export default function App() {
         });
       }
       // Notification for incoming DM + refresh contacts
-      if (msg.sender_id !== Number(JSON.parse(localStorage.getItem('user') || '{}').id || 0)) {
+      let currentUserId = 0;
+      try { currentUserId = Number(JSON.parse(localStorage.getItem('user') || '{}').id || 0); } catch {}
+      if (msg.sender_id !== currentUserId) {
         playNotifSound();
         showNotification(msg.sender_name || 'Nouveau message', msg.content || 'Fichier');
         // Refresh contacts list (sender auto-added as contact on server)
@@ -232,8 +236,9 @@ export default function App() {
         });
       }
       // Notification for group message
-      const currentUserId = Number(JSON.parse(localStorage.getItem('user') || '{}').id || 0);
-      if (msg.sender_id !== currentUserId) {
+      let currentUserId2 = 0;
+      try { currentUserId2 = Number(JSON.parse(localStorage.getItem('user') || '{}').id || 0); } catch {}
+      if (msg.sender_id !== currentUserId2) {
         playNotifSound();
         showNotification(msg.sender_full_name || msg.sender_name || 'Groupe', msg.content || 'Fichier');
       }

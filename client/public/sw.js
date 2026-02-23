@@ -1,4 +1,4 @@
-const CACHE_NAME = 'heretochat-v8';
+const CACHE_NAME = 'heretochat-v9';
 
 // Fichiers à pré-cacher au moment de l'installation
 const PRECACHE_URLS = [
