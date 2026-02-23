@@ -588,13 +588,22 @@ io.on('connection', async (socket) => {
   socket.on('send-message', async (data) => {
     try {
       const { receiverId, content, type, fileUrl, fileName, replyTo } = data;
-      if ((!content && !fileUrl) || !receiverId) return;
+      if ((!content && !fileUrl) || !receiverId) {
+        socket.emit('message-error', { error: 'Données manquantes' });
+        return;
+      }
 
       const rid = Number(receiverId);
       const blocked = await db.getBlockedUsers(rid);
-      if (blocked.some(b => b.blocked_id === userId)) return;
+      if (blocked.some(b => b.blocked_id === userId)) {
+        socket.emit('message-error', { error: 'Vous êtes bloqué par cet utilisateur' });
+        return;
+      }
       const blocked2 = await db.getBlockedUsers(userId);
-      if (blocked2.some(b => b.blocked_id === rid)) return;
+      if (blocked2.some(b => b.blocked_id === rid)) {
+        socket.emit('message-error', { error: 'Vous avez bloqué cet utilisateur' });
+        return;
+      }
       await db.addContact(userId, rid, '');
       await db.addContact(rid, userId, '');
       const result = await db.saveMessage(userId, rid, content || '', type || 'text', fileUrl || '', fileName || '', replyTo || null);

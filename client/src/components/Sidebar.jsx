@@ -483,7 +483,7 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
             const result = await onAddContact(c.tel[0], c.name?.[0] || '');
             if (!result.error) added++;
             else if (result.error === 'Aucun utilisateur avec ce numéro') {
-              missing.push(c.name?.[0] || c.tel[0]);
+              missing.push(c.name?.[0] || c.tel?.[0] || 'Inconnu');
             }
           }
         }

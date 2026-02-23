@@ -1,8 +1,9 @@
-const CACHE_NAME = 'heretochat-v7';
+const CACHE_NAME = 'heretochat-v8';
 
 // Fichiers à pré-cacher au moment de l'installation
 const PRECACHE_URLS = [
   '/',
+  '/index.html',
   '/dragon-logo.svg',
   '/manifest.json',
   '/notif.wav'
@@ -27,10 +28,18 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Ne pas cacher les requêtes API, socket.io et uploads
+  // API, socket.io, uploads : network only, fallback offline
   if (url.pathname.startsWith('/api') ||
       url.pathname.startsWith('/socket.io') ||
       url.pathname.startsWith('/uploads')) {
+    event.respondWith(
+      fetch(event.request).catch(() =>
+        new Response(JSON.stringify({ error: 'offline' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+    );
     return;
   }
 
