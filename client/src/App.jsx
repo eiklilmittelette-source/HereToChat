@@ -326,14 +326,22 @@ export default function App() {
     return () => disconnectSocket();
   }, [token]);
 
+  // Auto-logout on invalid token
+  function checkAuth(r) {
+    if (r.status === 401) {
+      handleLogout();
+      return false;
+    }
+    return r.ok;
+  }
+
   // Fetch contacts (avec cache localStorage pour mode hors-ligne)
   useEffect(() => {
     if (!token) return;
-    // Charger le cache en premier
-    try { const cached = localStorage.getItem('cached_contacts'); if (cached) setUsers(JSON.parse(cached)); } catch {}
+    try { const cached = localStorage.getItem('cached_contacts'); if (cached) { const p = JSON.parse(cached); if (Array.isArray(p)) setUsers(p); } } catch {}
     const f = () => fetch(apiUrl('/api/users'), { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(data => { setUsers(data); localStorage.setItem('cached_contacts', JSON.stringify(data)); })
+      .then(r => { if (!checkAuth(r)) return null; return r.json(); })
+      .then(data => { if (data && Array.isArray(data)) { setUsers(data); localStorage.setItem('cached_contacts', JSON.stringify(data)); } })
       .catch(() => {});
     f();
     const i = setInterval(f, 5000);
@@ -343,10 +351,10 @@ export default function App() {
   // Fetch groups (avec cache localStorage pour mode hors-ligne)
   useEffect(() => {
     if (!token) return;
-    try { const cached = localStorage.getItem('cached_groups'); if (cached) setGroups(JSON.parse(cached)); } catch {}
+    try { const cached = localStorage.getItem('cached_groups'); if (cached) { const p = JSON.parse(cached); if (Array.isArray(p)) setGroups(p); } } catch {}
     const f = () => fetch(apiUrl('/api/groups'), { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(data => { setGroups(data); localStorage.setItem('cached_groups', JSON.stringify(data)); })
+      .then(r => { if (!checkAuth(r)) return null; return r.json(); })
+      .then(data => { if (data && Array.isArray(data)) { setGroups(data); localStorage.setItem('cached_groups', JSON.stringify(data)); } })
       .catch(() => {});
     f();
     const i = setInterval(f, 5000);
@@ -357,14 +365,18 @@ export default function App() {
   useEffect(() => {
     if (!token || !selectedUser || selectedGroup) return;
     fetch(apiUrl(`/api/messages/${selectedUser.id}`), { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(setMessages).catch(() => {});
+      .then(r => { if (!checkAuth(r)) return null; return r.json(); })
+      .then(data => { if (data && Array.isArray(data)) setMessages(data); })
+      .catch(() => {});
   }, [token, selectedUser, selectedGroup]);
 
   // Fetch group messages
   useEffect(() => {
     if (!token || !selectedGroup) return;
     fetch(apiUrl(`/api/groups/${selectedGroup.id}/messages`), { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(setMessages).catch(() => {});
+      .then(r => { if (!checkAuth(r)) return null; return r.json(); })
+      .then(data => { if (data && Array.isArray(data)) setMessages(data); })
+      .catch(() => {});
   }, [token, selectedGroup]);
 
   function handleLogin(u, t) { setUser(u); setToken(t); localStorage.setItem('token', t); localStorage.setItem('user', JSON.stringify(u)); }
