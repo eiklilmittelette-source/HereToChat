@@ -551,8 +551,8 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
         </div>
         {!isGroup && selectedUser.phone && (
           <>
-            <button onClick={() => window.open(`tel:${selectedUser.phone}`)} title="Appeler" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px' }}>📞</button>
-            <button onClick={() => window.open(`facetime-audio:${selectedUser.phone}`)} title="FaceTime Audio" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px' }}>🎥</button>
+            <button onClick={() => { window.location.href = `tel:${selectedUser.phone}`; }} title="Appeler" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px' }}>📞</button>
+            <button onClick={() => { window.location.href = `facetime:${selectedUser.phone}`; }} title="FaceTime" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px' }}>🎥</button>
           </>
         )}
         {!isGroup && onBlockUser && (
