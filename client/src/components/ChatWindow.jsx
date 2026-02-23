@@ -549,6 +549,12 @@ export default function ChatWindow({ messages, currentUser, selectedUser, select
           <span className="chat-header-name">{headerName}</span>
           <span className={`chat-header-status ${isOnline || typing ? 'online' : 'offline'}`}>{headerStatus}</span>
         </div>
+        {!isGroup && selectedUser.phone && (
+          <>
+            <a href={`tel:${selectedUser.phone}`} title="Appeler" style={{ fontSize: 20, padding: '4px 6px', textDecoration: 'none' }}>📞</a>
+            <a href={`facetime:${selectedUser.phone}`} title="FaceTime" style={{ fontSize: 20, padding: '4px 6px', textDecoration: 'none' }}>📱</a>
+          </>
+        )}
         {!isGroup && onBlockUser && (
           <button className="block-btn" onClick={() => { if (window.confirm(`Bloquer ${headerName} ?`)) onBlockUser(selectedUser.id); }} title="Bloquer">🚫</button>
         )}
