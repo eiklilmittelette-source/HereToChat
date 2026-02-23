@@ -451,29 +451,38 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
   const hasContactsApi = typeof navigator !== 'undefined' && 'contacts' in navigator && 'ContactsManager' in window;
 
   async function handleSidebarImport() {
-    if (!hasContactsApi) {
-      setImportStatus('Disponible uniquement sur Android Chrome. Utilise le bouton 📩 pour inviter.');
-      setTimeout(() => setImportStatus(''), 4000);
-      return;
-    }
-    try {
-      const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
-      if (!contacts || contacts.length === 0) return;
-      setImportLoading(true);
-      setImportStatus(`Import de ${contacts.length} contacts...`);
-      let added = 0;
-      for (const c of contacts) {
-        if (c.tel && c.tel[0]) {
-          const result = await onAddContact(c.tel[0], c.name?.[0] || '');
-          if (!result.error) added++;
+    if (hasContactsApi) {
+      try {
+        const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+        if (!contacts || contacts.length === 0) return;
+        setImportLoading(true);
+        setImportStatus(`Import de ${contacts.length} contacts...`);
+        let added = 0;
+        for (const c of contacts) {
+          if (c.tel && c.tel[0]) {
+            const result = await onAddContact(c.tel[0], c.name?.[0] || '');
+            if (!result.error) added++;
+          }
         }
+        setImportStatus(`${added} contact${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''}`);
+        setTimeout(() => setImportStatus(''), 3000);
+      } catch (err) {
+        console.error('Import contacts error:', err);
+      } finally {
+        setImportLoading(false);
       }
-      setImportStatus(`${added} contact${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''}`);
-      setTimeout(() => setImportStatus(''), 3000);
-    } catch (err) {
-      console.error('Import contacts error:', err);
-    } finally {
-      setImportLoading(false);
+    } else {
+      // Pas de Contact Picker API — partager le lien d'invitation
+      const inviteUrl = `${window.location.origin}?invite=${currentUser.id}`;
+      const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`;
+      if (navigator.share) {
+        navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {});
+      } else {
+        navigator.clipboard.writeText(text).then(() => {
+          setImportStatus('Lien d\'invitation copié !');
+          setTimeout(() => setImportStatus(''), 3000);
+        }).catch(() => {});
+      }
     }
   }
 
@@ -578,7 +587,7 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
           onClick={handleSidebarImport}
           style={{ margin: '12px 16px', padding: '12px', background: 'linear-gradient(135deg, #2ecc71, #27ae60)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', width: 'calc(100% - 32px)' }}
         >
-          {importLoading ? '...' : '📱 Importer tous les contacts'}
+          {importLoading ? '...' : hasContactsApi ? '📱 Importer tous les contacts' : '📩 Inviter des amis'}
         </button>
       </div>
       {showAddModal && (

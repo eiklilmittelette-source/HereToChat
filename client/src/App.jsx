@@ -188,19 +188,28 @@ export default function App() {
     return () => disconnectSocket();
   }, [token]);
 
-  // Fetch contacts
+  // Fetch contacts (avec cache localStorage pour mode hors-ligne)
   useEffect(() => {
     if (!token) return;
-    const f = () => fetch(apiUrl('/api/users'), { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(setUsers).catch(() => {});
+    // Charger le cache en premier
+    try { const cached = localStorage.getItem('cached_contacts'); if (cached) setUsers(JSON.parse(cached)); } catch {}
+    const f = () => fetch(apiUrl('/api/users'), { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { setUsers(data); localStorage.setItem('cached_contacts', JSON.stringify(data)); })
+      .catch(() => {});
     f();
     const i = setInterval(f, 5000);
     return () => clearInterval(i);
   }, [token]);
 
-  // Fetch groups
+  // Fetch groups (avec cache localStorage pour mode hors-ligne)
   useEffect(() => {
     if (!token) return;
-    const f = () => fetch(apiUrl('/api/groups'), { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(setGroups).catch(() => {});
+    try { const cached = localStorage.getItem('cached_groups'); if (cached) setGroups(JSON.parse(cached)); } catch {}
+    const f = () => fetch(apiUrl('/api/groups'), { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { setGroups(data); localStorage.setItem('cached_groups', JSON.stringify(data)); })
+      .catch(() => {});
     f();
     const i = setInterval(f, 5000);
     return () => clearInterval(i);
@@ -221,7 +230,7 @@ export default function App() {
   }, [token, selectedGroup]);
 
   function handleLogin(u, t) { setUser(u); setToken(t); localStorage.setItem('token', t); localStorage.setItem('user', JSON.stringify(u)); }
-  function handleLogout() { disconnectSocket(); setUser(null); setToken(null); setSelectedUser(null); setSelectedGroup(null); setMessages([]); localStorage.removeItem('token'); localStorage.removeItem('user'); }
+  function handleLogout() { disconnectSocket(); setUser(null); setToken(null); setSelectedUser(null); setSelectedGroup(null); setMessages([]); localStorage.removeItem('token'); localStorage.removeItem('user'); localStorage.removeItem('cached_contacts'); localStorage.removeItem('cached_groups'); }
 
   async function handleAddContact(phone, nickname) {
     try {
