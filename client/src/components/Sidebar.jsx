@@ -237,7 +237,7 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
         <h2>Paramètres</h2>
       </div>
       <div className="settings-content">
-        <div className="settings-avatar-section">
+        <div className="settings-avatar-section" onClick={() => picRef.current?.click()} style={{ cursor: 'pointer' }}>
           {avatarSrc ? (
             <img src={avatarSrc} alt="avatar" className="settings-avatar-img" />
           ) : (
@@ -250,6 +250,7 @@ function SettingsPage({ currentUser, onClose, onUpdateProfile, onLogout }) {
         <label style={{ display: 'block', textAlign: 'center', marginBottom: 16, padding: '10px 20px', background: 'linear-gradient(135deg, #3498db, #2980b9)', color: '#fff', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
           Choisir une photo
           <input
+            ref={picRef}
             type="file"
             accept="image/*"
             onChange={handlePicSelect}
@@ -428,6 +429,42 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [search, setSearch] = useState('');
+  const [importLoading, setImportLoading] = useState(false);
+  const [importStatus, setImportStatus] = useState('');
+
+  const hasContactsApi = typeof navigator !== 'undefined' && 'contacts' in navigator && 'ContactsManager' in window;
+
+  async function handleSidebarImport() {
+    if (!hasContactsApi) {
+      const inviteUrl = `${window.location.origin}?invite=${currentUser.id}`;
+      const text = `Rejoins-moi sur HereToChat ! ${inviteUrl}`;
+      if (navigator.share) {
+        navigator.share({ title: 'HereToChat', text, url: inviteUrl }).catch(() => {});
+      } else {
+        navigator.clipboard.writeText(text).then(() => setImportStatus('Lien copié !')).catch(() => {});
+      }
+      return;
+    }
+    try {
+      const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+      if (!contacts || contacts.length === 0) return;
+      setImportLoading(true);
+      setImportStatus(`Import de ${contacts.length} contacts...`);
+      let added = 0;
+      for (const c of contacts) {
+        if (c.tel && c.tel[0]) {
+          const result = await onAddContact(c.tel[0], c.name?.[0] || '');
+          if (!result.error) added++;
+        }
+      }
+      setImportStatus(`${added} contact${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''}`);
+      setTimeout(() => setImportStatus(''), 3000);
+    } catch (err) {
+      console.error('Import contacts error:', err);
+    } finally {
+      setImportLoading(false);
+    }
+  }
 
   const filteredUsers = users.filter(u => {
     if (!search.trim()) return true;
@@ -523,6 +560,15 @@ export default function Sidebar({ className, users, groups, onlineUsers, current
             <span className="no-users-hint">Clique sur ＋ pour ajouter quelqu'un</span>
           </div>
         )}
+        {importStatus && <div style={{ padding: '8px 16px', color: '#2ecc71', fontSize: 13, textAlign: 'center' }}>{importStatus}</div>}
+        <button
+          type="button"
+          disabled={importLoading}
+          onClick={handleSidebarImport}
+          style={{ margin: '12px 16px', padding: '12px', background: 'linear-gradient(135deg, #2ecc71, #27ae60)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', width: 'calc(100% - 32px)' }}
+        >
+          {importLoading ? '...' : hasContactsApi ? '📱 Importer tous les contacts' : '📩 Inviter des amis'}
+        </button>
       </div>
       {showAddModal && (
         <AddContactModal
